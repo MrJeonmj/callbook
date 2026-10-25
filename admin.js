@@ -104,7 +104,7 @@ function settings() {
     <label class="field">Claude API 키<input id="sKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-ant-..." autocomplete="off"></label>
     <label class="field">모델<select id="sModel"><option value="${esc(c.model)}">${esc(c.model || '키 입력 후 "모델 불러오기"')}</option></select></label>
     <button class="btn block" id="sLoad">모델 불러오기 · 연결 확인</button>
-    <label class="field">근무표 비밀번호 (모든 사용자가 같은 비밀번호로 엽니다)<input id="sPw" type="password" value="${esc(c.pw)}" autocomplete="new-password"></label>
+    <label class="field">근무표 비밀번호 (모든 사용자가 같은 비밀번호로 엽니다)<input id="sPw" type="password" value="${esc(c.pw || LS.get('pw') || '')}" autocomplete="new-password"></label>
     <h4>GitHub 게시 (앱이 올라가 있는 저장소)</h4>
     <label class="field">계정(owner)<input id="sOwner" value="${esc(c.gh.owner)}" autocapitalize="off"></label>
     <label class="field">저장소(repo)<input id="sRepo" value="${esc(c.gh.repo)}" autocapitalize="off"></label>
@@ -136,10 +136,15 @@ function settings() {
     } catch (e) { toast('GitHub 실패: ' + e.message); }
     busy('');
   };
-  $('sSave').onclick = () => {
+  $('sSave').onclick = async () => {
     const n = read();
     if (n.pw && n.pw.length < 6) return toast('비밀번호는 6자 이상으로 해 주세요');
-    LS.set('admin', n); if (n.pw) LS.set('pw', n.pw); toast('저장했습니다'); open();
+    const blob = LS.get('blob');
+    if (n.pw && blob) {
+      const same = await Crypt.open(blob, n.pw).then(() => true, () => false);
+      if (!same && !confirm('게시된 근무표와 다른 비밀번호입니다.\n이대로 게시하면 모든 사용자가 새 비밀번호를 입력해야 합니다.\n바꿀까요?')) return;
+    }
+    LS.set('admin', n); if (n.pw && !blob) LS.set('pw', n.pw); toast('저장했습니다'); open();
   };
 }
 const ghHeaders = token => ({ Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'X-GitHub-Api-Version': '2022-11-28' });
@@ -264,7 +269,8 @@ async function fromXlsx(ui, f) {
     } catch {}
     if (found) {
       busy('');
-      return showDeptDiff(ui, { nurses: found.nurses, memo_changes: found.memo !== u.memo ? '엑셀의 메모가 기존과 다릅니다' : '', notes: '엑셀에서 직접 읽음' }, found);
+      const { unit, keptMemo } = Engine.mergeRevised(u, found);
+      return showDeptDiff(ui, { nurses: unit.nurses, memo_changes: !keptMemo && unit.memo !== u.memo ? '엑셀의 메모가 기존과 다릅니다' : '', notes: keptMemo ? '엑셀에서 직접 읽음 · 메모가 없어 기존 번호 안내 유지' : '엑셀에서 직접 읽음' }, unit);
     }
     // 양식이 달라 자동 인식이 안 되면 표를 글로 바꿔 Claude에게
     const rows = []; for (let r = 1; r <= Math.min(book.maxRow, 120); r++) { const row = book.grid.get(r); if (!row) continue; const cells = []; for (let c = 1; c <= Math.min(book.maxCol, 50); c++) { const x = row.get(c); cells.push((x?.v ?? '') + (x?.fill && /FFC000|FFFF00/.test(x.fill) ? '#노랑' : '')); } rows.push(cells.join('\t').replace(/\t+$/, '')); }
@@ -362,7 +368,7 @@ async function publish() {
     const r = await fetch(url, { method: 'PUT', headers: { ...ghHeaders(g.token), 'content-type': 'application/json' },
       body: JSON.stringify({ message: `근무표 ${blob.month} 갱신 ${new Date().toLocaleString('ko-KR')}`, content: utf8b64(body), branch: g.branch, ...(sha ? { sha } : {}) }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.message || r.status);
-    LS.set('blob', blob); A.dirty = false; App.S.data = clone(A.draft);
+    LS.set('blob', blob); LS.set('pw', c.pw); A.dirty = false; App.S.data = clone(A.draft);
     busy(''); $('pbOut').innerHTML = `<div class="banner" style="background:var(--accent-soft);color:var(--accent)">게시했습니다. 사용자는 앱을 다시 열거나 설정 › 최신 근무표 받기를 누르면 바뀝니다. (반영까지 1~2분 걸릴 수 있습니다)</div>`;
   } catch (e) { busy(''); $('pbOut').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
 }

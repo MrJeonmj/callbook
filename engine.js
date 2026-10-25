@@ -229,6 +229,14 @@ function range(a, b) { const o = []; for (let i = a; i <= b; i++) o.push(i); ret
 
 /* ============================================================ 규칙 대조 */
 const NUM_RE = /0\d{1,2}-\d{3,4}-\d{4}|(?<![\d:])\d{4,6}(?![\d:])/g;
+/* 부서 수정본 엑셀에 번호 안내 메모가 없으면(근무표 칸만 있으면) 기존 메모·교수-PA 짝·대체표를 유지 */
+const hasGuide = memo => /pf\s*\.?/i.test(memo) || [...memo.matchAll(NUM_RE)].length > 0;
+function mergeRevised(old, neu) {
+  const keptMemo = !hasGuide(neu.memo) && hasGuide(old.memo);
+  const unit = { ...neu, key: old.key, name: old.name, kind: old.kind, order: old.order };
+  if (keptMemo) Object.assign(unit, { memo: old.memo, text: old.text, cover: old.cover, extraInfo: old.extraInfo });
+  return { unit, keptMemo };
+}
 const PF_RE = /pf\s*\.?\s*([가-힣]{2,4}(?:\s*,\s*(?:pf\s*\.?\s*)?[가-힣]{2,4})*)/gi;
 function cfgNames(k, cfg) {
   const c = cfg[k] || {}; const s = new Set();
@@ -643,5 +651,5 @@ function unitToGrid(u, nDays) {
   return [head, ...u.nurses.map(n => [n.name, clean(n.info), ...n.codes.map((c, i) => c + (n.marks?.[i] === 'Y' ? '#노랑' : n.marks?.[i] === 'B' ? '#파랑' : ''))])];
 }
 
-G.Engine = { readXlsx, extractBook, compute, ruleCheck, setDefaultCfg, get DEFAULT_CFG() { return DEFAULT_CFG; }, UNK, WD, jsWd, unitToGrid, clean };
+G.Engine = { readXlsx, extractBook, compute, ruleCheck, mergeRevised, setDefaultCfg, get DEFAULT_CFG() { return DEFAULT_CFG; }, UNK, WD, jsWd, unitToGrid, clean };
 })(typeof window !== 'undefined' ? window : globalThis);

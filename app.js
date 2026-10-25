@@ -67,7 +67,7 @@ async function boot() {
   const local = LS.get('blob');
   let blob = local;
   if (remote && (!local || remote.updatedAt !== local.updatedAt)) { blob = remote; LS.set('blob', remote); }
-  if (!blob) return showLock('아직 게시된 근무표가 없습니다. 관리자에게 파일을 받거나 관리자 설정을 하세요.');
+  if (!blob) return showLock('아직 게시된 근무표가 없습니다');
   const pw = LS.get('pw');
   if (!pw) return showLock();
   try { setData(await Crypt.open(blob, pw)); }
@@ -95,7 +95,6 @@ $('unlock').onclick = async () => {
   catch { $('lockMsg').textContent = '비밀번호가 맞지 않습니다'; $('pw').select(); }
 };
 $('pw').onkeydown = e => { if (e.key === 'Enter') $('unlock').click(); };
-$('importBtn').onclick = () => pickFile('.json,application/json', importBlobFile);
 $('adminFromLock').onclick = () => window.Admin && Admin.open();
 async function importBlobFile(f) {
   try {
