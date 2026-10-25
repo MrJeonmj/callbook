@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c1c21" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="mobile-web-app-capable" content="yes">
+<title>전담 콜북</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+/* MDT Smart View 디자인 언어: 흰 바탕 + 따뜻한 회색 면, 얇은 테두리 10px 카드, 앰버 브랜드색, 색 틴트 버튼, 왼쪽 막대 섹션 제목, Pretendard + 숫자는 Inter */
+:root {
+  --fb: 'Pretendard Variable', 'Pretendard', 'Noto Sans KR', system-ui, 'Malgun Gothic', sans-serif;
+  --fn: 'Inter', 'Pretendard Variable', system-ui, sans-serif;
+  --bg: #f8f7f4; --surface: #ffffff; --surface2: #eeecea; --ink: #1a1a2e; --muted: #5c5f6e; --faint: #9496a1;
+  --line: rgba(0,0,0,.07); --line2: rgba(0,0,0,.12);
+  --accent: #d97706; --accent-soft: rgba(217,119,6,.12); --on-accent: #ffffff;
+  --primary: #0f766e; --on-primary: #ffffff;
+  --day: #b45309; --day-soft: rgba(217,119,6,.10); --day-bdr: rgba(217,119,6,.35);
+  --eve: #c0392b; --eve-soft: rgba(192,57,43,.08); --eve-bdr: rgba(192,57,43,.28);
+  --night: #1d4ed8; --night-soft: rgba(29,78,216,.08); --night-bdr: rgba(29,78,216,.25);
+  --warn: #b45309; --warn-soft: #fff7e6; --bad: #c0392b; --ok: #16a34a;
+  --shadow: 0 1px 2px rgba(0,0,0,.04);
+  --r: 10px; --r-sm: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121214; --surface: #1c1c21; --surface2: #27272d; --ink: #ecebf0; --muted: #a6a6b0; --faint: #77777f;
+  --line: rgba(255,255,255,.08); --line2: rgba(255,255,255,.14);
+  --accent: #f59e0b; --accent-soft: rgba(245,158,11,.16); --on-accent: #1a1206; --primary: #14a394; --on-primary: #06120f;
+  --day: #fbbf24; --day-soft: rgba(245,158,11,.14); --day-bdr: rgba(245,158,11,.4);
+  --eve: #f87171; --eve-soft: rgba(248,113,113,.12); --eve-bdr: rgba(248,113,113,.38);
+  --night: #7aa2ff; --night-soft: rgba(96,140,250,.14); --night-bdr: rgba(96,140,250,.38);
+  --warn: #fbbf24; --warn-soft: rgba(245,158,11,.12); --bad: #f87171; --ok: #4ade80; --shadow: none; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121214; --surface: #1c1c21; --surface2: #27272d; --ink: #ecebf0; --muted: #a6a6b0; --faint: #77777f;
+  --line: rgba(255,255,255,.08); --line2: rgba(255,255,255,.14);
+  --accent: #f59e0b; --accent-soft: rgba(245,158,11,.16); --on-accent: #1a1206; --primary: #14a394; --on-primary: #06120f;
+  --day: #fbbf24; --day-soft: rgba(245,158,11,.14); --day-bdr: rgba(245,158,11,.4);
+  --eve: #f87171; --eve-soft: rgba(248,113,113,.12); --eve-bdr: rgba(248,113,113,.38);
+  --night: #7aa2ff; --night-soft: rgba(96,140,250,.14); --night-bdr: rgba(96,140,250,.38);
+  --warn: #fbbf24; --warn-soft: rgba(245,158,11,.12); --bad: #f87171; --ok: #4ade80; --shadow: none; color-scheme: dark }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+html, body { margin: 0; height: 100% }
+body { background: var(--bg); color: var(--ink); font: 14.5px/1.45 var(--fb); -webkit-font-smoothing: antialiased; overscroll-behavior-y: none; word-break: keep-all }
+button, input, select, textarea { font: inherit; color: inherit }
+button { cursor: pointer }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+[hidden] { display: none !important }
+.gut { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--surface) }
+
+/* ---------- 상단 (사이드패널 머리 느낌) */
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface); padding-block: 12px 10px; border-bottom: 1px solid var(--line); box-shadow: 0 2px 12px rgba(0,0,0,.04) }
+.brand { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px }
+.logo { display: flex; align-items: center; gap: 9px; min-width: 0 }
+.logo-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #fb7185, #f97316 50%, #c2410c); display: grid; place-items: center; flex: none }
+.logo-text { font-size: 15.5px; font-weight: 800; letter-spacing: -.3px; line-height: 1.15 }
+.meta { font-size: 12.5px; color: var(--faint); font-family: var(--fn); display: flex; gap: 6px; align-items: center }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block }
+.dot.stale { background: var(--accent) }
+.dateRow { display: flex; align-items: center; gap: 6px }
+.dateRow .arrow { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line2); background: var(--surface); color: var(--muted); display: grid; place-items: center; flex: none }
+.dateBtn { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0 4px }
+.dateBtn .d { font-size: 24px; font-weight: 800; letter-spacing: -.5px; line-height: 1.15; font-family: var(--fb) }
+.dateBtn .d small { font-size: 14px; font-weight: 700; color: var(--faint); margin-left: 6px }
+.dateBtn .d small.h { color: var(--bad) }
+.todayPill { border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 800; flex: none }
+.shifts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px }
+.shifts button { border: 1px solid var(--line2); border-radius: var(--r-sm); padding: 7px 4px 6px; background: var(--surface); color: var(--muted); display: grid; justify-items: center; position: relative }
+.shifts button b { font-size: 14px; font-weight: 800 }
+.shifts button span { font-size: 11.5px; font-family: var(--fn); font-weight: 600; opacity: .8 }
+.shifts button[aria-pressed="true"][data-s="D"] { background: var(--day-soft); color: var(--day); border-color: var(--day-bdr) }
+.shifts button[aria-pressed="true"][data-s="E"] { background: var(--eve-soft); color: var(--eve); border-color: var(--eve-bdr) }
+.shifts button[aria-pressed="true"][data-s="N"] { background: var(--night-soft); color: var(--night); border-color: var(--night-bdr) }
+.shifts button i { position: absolute; top: -7px; right: 6px; font-style: normal; font-size: 9.5px; font-weight: 800; background: var(--accent); color: var(--on-accent); border-radius: 4px; padding: 0 5px; line-height: 15px }
+.search { margin-top: 10px; position: relative }
+.search input { width: 100%; height: 42px; border-radius: 8px; border: 1px solid var(--line2); background: var(--bg); padding: 0 40px; font-size: 16px; font-weight: 600 }
+.search input:focus { border-color: var(--accent); outline: none; background: var(--surface) }
+.search svg { position: absolute; left: 13px; top: 12px; width: 18px; height: 18px; color: var(--faint) }
+.search .clear { position: absolute; right: 4px; top: 4px; width: 34px; height: 34px; border-radius: 6px; border: 0; background: transparent; color: var(--muted) }
+input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; display: none }
+.chips { display: flex; gap: 6px; overflow-x: auto; margin-top: 10px; scrollbar-width: none }
+.chips::-webkit-scrollbar { display: none }
+.chip { flex: none; height: 28px; display: inline-flex; align-items: center; border: 1px solid var(--line2); background: var(--surface); color: var(--muted); border-radius: 14px; padding: 0 11px; font-size: 12.5px; font-weight: 700; white-space: nowrap }
+.chip.fav { background: var(--accent); border-color: var(--accent); color: var(--on-accent) }
+.chip .n { color: var(--bad); margin-left: 4px; font-family: var(--fn); font-weight: 800 }
+.chip.fav .n { color: var(--on-accent) }
+
+/* ---------- 목록 */
+main { padding-block: 14px 110px; display: grid; gap: 12px }
+.banner { border-radius: var(--r); padding: 11px 13px; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--day-bdr); font-size: 13px; font-weight: 600 }
+.dept { background: var(--surface); border-radius: var(--r); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; scroll-margin-top: 250px }
+.dept > header { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 14px; background: var(--surface) }
+.dept > header h2 { font-size: 15px; margin: 0; font-weight: 800; letter-spacing: -.3px; flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px }
+.dept > header h2::before { content: ""; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); flex: none }
+.dept > header .w { font-size: 11.5px; font-weight: 800; color: var(--bad); background: var(--eve-soft); border: 1px solid var(--eve-bdr); border-radius: 4px; padding: 0 6px; font-family: var(--fn) }
+.star { border: 0; background: none; width: 32px; height: 32px; border-radius: 6px; color: var(--faint); display: grid; place-items: center }
+.star[aria-pressed="true"] { color: var(--accent) }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: center }
+.row.warn { background: var(--warn-soft); box-shadow: inset 3px 0 0 var(--accent) }
+.who { min-width: 0 }
+.who .p { font-weight: 800; font-size: 15.5px; letter-spacing: -.3px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center }
+.badge { display: inline-block; font-size: 11.5px; font-weight: 700; color: var(--muted); background: var(--bg); border: 1px solid var(--line2); border-radius: 4px; padding: 0 6px; line-height: 18px; white-space: nowrap; letter-spacing: 0 }
+.badge.s-D { color: var(--day); background: var(--day-soft); border-color: var(--day-bdr) }
+.badge.s-E { color: var(--eve); background: var(--eve-soft); border-color: var(--eve-bdr) }
+.badge.s-N { color: var(--night); background: var(--night-soft); border-color: var(--night-bdr) }
+.who .w2 { font-size: 12.5px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; font-weight: 600 }
+.who .nt { font-size: 11.5px; color: var(--faint); margin-top: 2px; overflow-wrap: anywhere }
+.who .wt { font-size: 12px; color: var(--bad); margin-top: 3px; font-weight: 700; overflow-wrap: anywhere }
+.nums { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; max-width: 54vw }
+.num { border: 1px solid var(--line2); background: var(--surface); border-radius: var(--r-sm); padding: 5px 10px; font-family: var(--fn); font-size: 17px; font-weight: 800; letter-spacing: -.2px; font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; align-items: center; gap: 6px; color: var(--ink) }
+.num:active { background: var(--accent-soft); border-color: var(--accent) }
+.num.cell { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: color-mix(in srgb, var(--primary) 7%, var(--surface)) }
+.num.unk { color: var(--bad); font-size: 13px; white-space: normal; text-align: right; background: var(--eve-soft); border-color: var(--eve-bdr); font-family: var(--fb) }
+.num.txt { font-size: 12.5px; font-weight: 700; white-space: normal; text-align: right; max-width: 54vw; font-family: var(--fb); line-height: 1.6 }
+.num.txt .badge { font-family: var(--fn); font-weight: 800 }
+.num svg { width: 13px; height: 13px }
+.empty { text-align: center; color: var(--faint); padding: 40px 16px; font-size: 13px }
+.empty b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 6px; font-weight: 800 }
+.more { border: 0; background: var(--bg); color: var(--accent); font-weight: 800; font-size: 13px; padding: 10px 14px; width: 100%; text-align: center; border-top: 1px solid var(--line) }
+
+/* ---------- 교수 탭 */
+.plist { background: var(--surface); border-radius: var(--r); border: 1px solid var(--line); overflow: hidden }
+.plist h3 { margin: 0; padding: 10px 14px 6px; font-size: 12.5px; letter-spacing: .8px; color: var(--accent); font-weight: 800; display: flex; align-items: center; gap: 6px }
+.plist h3::after { content: ""; flex: 1; height: 1px; background: var(--accent-soft) }
+.pitem { width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; padding: 11px 14px; display: flex; justify-content: space-between; gap: 10px; align-items: center }
+.pitem b { font-size: 15.5px; font-weight: 800; letter-spacing: -.3px }
+.pitem span { font-size: 12px; color: var(--faint); text-align: right; font-weight: 600 }
+
+/* ---------- 하단 탭 (분석 지도 / 대시보드 탭 느낌) */
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; background: var(--surface); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 6px max(10px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); box-shadow: 0 -2px 12px rgba(0,0,0,.04) }
+nav.tabs button { border: 1px solid transparent; background: none; border-radius: 8px; padding: 6px 0 5px; display: grid; justify-items: center; gap: 1px; font-size: 11.5px; color: var(--faint); font-weight: 700 }
+nav.tabs button svg { width: 22px; height: 22px }
+nav.tabs button[aria-current="page"] { color: var(--accent); background: var(--accent-soft); border-color: rgba(217,119,6,.25) }
+
+/* ---------- 시트 (데이터 입력 팝업 느낌) */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.28); z-index: 40; opacity: 0; transition: opacity .15s }
+.scrim.on { opacity: 1 }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--surface); border-radius: 14px 14px 0 0; border: 1px solid var(--line2); max-height: 88vh; overflow: auto; transform: translateY(100%); transition: transform .22s cubic-bezier(.4,0,.2,1); padding-block: 8px calc(20px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -20px 48px rgba(0,0,0,.2) }
+.sheet.on { transform: none }
+.sheet .grab { width: 38px; height: 4px; border-radius: 2px; background: var(--line2); margin: 4px auto 12px }
+.sheet h3 { margin: 2px 0 12px; font-size: 16px; font-weight: 800; letter-spacing: -.3px }
+.sheet .sub { color: var(--faint); font-size: 12.5px; margin: -8px 0 12px }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center }
+.cal .h { font-size: 11.5px; color: var(--faint); padding: 4px 0; font-weight: 700 }
+.cal button { aspect-ratio: 1; border: 1px solid var(--line2); border-radius: 8px; background: var(--surface); font-family: var(--fn); font-weight: 700; font-variant-numeric: tabular-nums; position: relative; max-width: 100% }
+.cal button.hol { color: var(--bad); background: var(--eve-soft); border-color: transparent }
+.cal button.sel { background: var(--accent); color: var(--on-accent); border-color: var(--accent) }
+.cal button.today::after { content: ""; position: absolute; bottom: 4px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: currentColor }
+.btn { border: 1px solid var(--line2); background: var(--surface); border-radius: 8px; padding: 10px 12px; font-weight: 800; font-size: 13.5px; color: var(--ink) }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary) }
+.btn.brand { background: var(--accent-soft); border-color: var(--accent); color: var(--accent) }
+.btn.danger { color: var(--bad); border-color: var(--eve-bdr); background: var(--eve-soft) }
+.btn[disabled] { opacity: .45 }
+.btn.block { width: 100% }
+.stack { display: grid; gap: 8px }
+.field { display: grid; gap: 5px; font-size: 12px; color: var(--faint); font-weight: 700 }
+.field input, .field select, .field textarea { border: 1px solid var(--line2); background: var(--surface); border-radius: var(--r-sm); padding: 9px 10px; font-size: 15px; color: var(--ink); width: 100%; font-weight: 600 }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink); font-weight: 600 }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); flex: none }
+.field textarea { min-height: 160px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 400 }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-top: 8px }
+.week div { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 2px; text-align: center; font-size: 10.5px; color: var(--faint); font-weight: 700 }
+.week div b { display: block; font-size: 12.5px; color: var(--ink); font-family: var(--fn); font-weight: 800 }
+
+/* ---------- 설정 (현황 요약 카드 느낌) */
+.card { background: var(--surface); border-radius: var(--r); border: 1px solid var(--line); padding: 14px; display: grid; gap: 10px }
+.card h3 { margin: 0; font-size: 12.5px; font-weight: 800; color: var(--faint); letter-spacing: .8px; display: flex; align-items: center; gap: 6px }
+.card h3::before { content: ""; width: 3px; height: 10px; border-radius: 2px; background: var(--line2) }
+.card h3::after { content: ""; flex: 1; height: 1px; background: var(--line) }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13.5px }
+.kv span { color: var(--faint); font-weight: 600 }
+.kv b { font-weight: 800 }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--surface2); padding: 3px; border-radius: 8px }
+.seg button { border: 0; border-radius: 6px; padding: 8px; background: transparent; font-weight: 700; color: var(--muted); font-size: 13px }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.08) }
+
+/* ---------- 잠금 화면 */
+.lock { min-height: 100vh; display: grid; place-items: center; padding-block: 40px }
+.lock .box { width: 100%; max-width: 360px; display: grid; gap: 12px; text-align: center; background: var(--surface); border: 1px solid var(--line2); border-radius: 12px; padding: 24px 18px; box-shadow: 0 20px 48px rgba(0,0,0,.08) }
+.lock .mark { width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 4px; background: linear-gradient(135deg, #fb7185, #f97316 50%, #c2410c); display: grid; place-items: center }
+.lock h1 { margin: 0; font-size: 20px; letter-spacing: -.5px; font-weight: 800 }
+.lock p { margin: 0 0 4px; color: var(--faint); font-size: 13px }
+.lock input { border: 1px solid var(--line2); border-radius: 8px; padding: 11px; text-align: center; font-size: 16px; background: var(--bg); font-weight: 700 }
+
+.toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 16px); background: #1a1a2e; color: #fff; padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; opacity: 0; transition: .18s; z-index: 60; pointer-events: none; max-width: 90vw; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.2) }
+.toast.on { opacity: 1; transform: translate(-50%, 0) }
+
+/* ---------- 관리자 */
+.admin h4 { margin: 8px 0 0; font-size: 12.5px; font-weight: 800; color: var(--accent); letter-spacing: .8px; display: flex; align-items: center; gap: 6px }
+.admin h4::before { content: ""; width: 3px; height: 10px; border-radius: 2px; background: var(--accent) }
+.admin h4::after { content: ""; flex: 1; height: 1px; background: var(--accent-soft) }
+.diff { display: grid; gap: 8px }
+.diffItem { border: 1px solid var(--line2); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; background: var(--surface) }
+.diffItem label { display: flex; gap: 8px; align-items: flex-start; font-weight: 800 }
+.diffItem pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 11.5px; color: var(--muted); max-height: 220px; overflow: auto; font-family: ui-monospace, Menlo, monospace }
+.gridwrap { overflow-x: auto; border: 1px solid var(--line2); border-radius: 8px }
+.gridwrap table { border-collapse: collapse; font-size: 12px; font-family: var(--fn); font-variant-numeric: tabular-nums }
+.gridwrap th, .gridwrap td { border-bottom: 1px solid var(--line); padding: 4px 5px; text-align: center; white-space: nowrap }
+.gridwrap th { color: var(--faint); font-weight: 700 }
+.gridwrap td.chg { background: var(--accent-soft); color: var(--accent); font-weight: 800 }
+.gridwrap td.nm { text-align: left; position: sticky; left: 0; background: var(--surface); font-weight: 800; font-family: var(--fb) }
+.prog { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; font-weight: 600 }
+.spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line2); border-top-color: var(--accent); animation: sp 1s linear infinite }
+@keyframes sp { to { transform: rotate(360deg) } }
+@media (min-width: 760px) { main, header.top > div, .lock .box { max-width: 760px; margin-inline: auto } .sheet { max-width: 640px; margin: 0 auto } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+</style>
+</head>
+<body>
+<div id="lockView" class="lock gut" hidden>
+  <div class="box">
+    <div class="mark"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg></div>
+    <h1>전담 콜북</h1>
+    <p id="lockMsg">관리자에게 받은 비밀번호를 입력하세요</p>
+    <input id="pw" type="password" inputmode="text" autocomplete="current-password" placeholder="비밀번호" >
+    <button id="unlock" class="btn primary block">열기</button>
+    <button id="importBtn" class="btn block">파일에서 불러오기</button>
+    <button id="adminFromLock" class="btn block" style="background:none;border:0;color:var(--muted)">관리자 설정</button>
+  </div>
+</div>
+
+<div id="appView" hidden>
+  <header class="top gut" id="top">
+    <div>
+      <div class="brand"><div class="logo"><span class="logo-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg></span><div><div class="logo-text">전담 콜북</div><div class="meta" id="meta"></div></div></div></div>
+      <div id="dateBar">
+        <div class="dateRow">
+          <button class="arrow" id="prev" aria-label="이전 날"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <button class="dateBtn" id="dateBtn" aria-label="날짜 선택"><div class="d" id="dateLabel"></div></button>
+          <button class="todayPill" id="todayBtn">오늘</button>
+          <button class="arrow" id="next" aria-label="다음 날"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+        <div class="shifts" role="group" aria-label="근무 시간대">
+          <button data-s="D" aria-pressed="false"><b>Day</b><span>07–15</span></button>
+          <button data-s="E" aria-pressed="false"><b>Evening</b><span>15–23</span></button>
+          <button data-s="N" aria-pressed="false"><b>Night</b><span>23–07</span></button>
+        </div>
+      </div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="교수 · 과 · 간호사 · 번호 검색" autocomplete="off" enterkeyhint="search">
+        <button class="clear" id="qClear" aria-label="검색어 지우기" hidden>✕</button>
+      </div>
+      <div class="chips" id="chips"></div>
+    </div>
+  </header>
+  <main class="gut" id="main"></main>
+  <nav class="tabs" id="tabs">
+    <button data-tab="home" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>근무표</button>
+    <button data-tab="prof"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>교수 찾기</button>
+    <button data-tab="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>설정</button>
+  </nav>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet gut" id="sheet" role="dialog" aria-modal="true" hidden><div class="grab"></div><div id="sheetBody"></div></div>
+<div class="toast" id="toast" role="status"></div>
+<input type="file" id="fileIn" hidden>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+<script src="xlsxw.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
