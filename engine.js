@@ -243,6 +243,7 @@ function mergeRevised(old, neu) {
   if (keptMemo) Object.assign(unit, { memo: old.memo, text: old.text, cover: old.cover, extraInfo: old.extraInfo });
   return { unit, keptMemo };
 }
+const NIGHT_MEMO = /(?:N\s*duty|Night|나이트)\s*[-:：]?\s*(?:0\d{1,2}-\d{3,4}-\d{4}|\d{4})/i;
 const PF_RE = /pf\s*\.?\s*([가-힣]{2,4}(?:\s*,\s*(?:pf\s*\.?\s*)?[가-힣]{2,4})*)/gi;
 function cfgNames(k, cfg) {
   const c = cfg[k] || {}; const s = new Set();
@@ -290,6 +291,8 @@ function compute(data) {
     (H[u.kind] || H.GEN)(cx, h, cfg);
     if (u.headerTypo && u.headerTypo.length) cx.rows.forEach(r => { if (r.unit === u.key && u.headerTypo.includes(r.d) && !String(r.workers).includes('미입력')) warn(r, '원본 날짜 머리글 오기 → 열 위치 기준 처리'); });
     const probs = ruleCheck(u, cfg);
+    const nm = NIGHT_MEMO.exec(u.memo);
+    if (nm && !cx.rows.some(r => r.unit === u.key && /^Night|^N\d/.test(r.shift))) probs.push(`메모에 야간 번호(${nm[0].trim()})가 있는데 Night 줄이 없음 → 시간대 규칙 확인`);
     if (probs.length) { changed.push({ key: u.key, name: u.name, probs }); cx.rows.forEach(r => { if (r.unit === u.key) warn(r, '원본 메모와 번호 규칙이 어긋남 → 확인 필요'); }); }
   }
   for (const [k, w] of Object.entries(data.manualWarn || {})) cx.rows.forEach(r => { if (r.unit === k) warn(r, w); });
@@ -550,12 +553,14 @@ const H = {
     };
     for (const d of cx.days) profPA(cx, h, d, pairs, c => /^(D0|X0?\d{1,2})$/.test(c), cover);
   },
+  // 원본 메모: Day(7am~3pm)·Evening(3pm~10:30pm)은 팀(Part) 번호, Night(10:30pm~7am)는 N duty 번호 하나
   GSW(cx, h, cfg) {
     const c = cfg.GSW, has = h.nurses.some(n => n.codes.some(Boolean));
-    for (const d of cx.days) c.teams.forEach(([team, profs, num], ti) => profs.forEach((p, pi) => {
-      if (!has) h.add(d, team, p, '-', num, '(이번 달 근무표 미입력)', `Night ${c.night} · 병동 전담은 ER call 안 받음`, '', [ti, pi]);
-      else h.add(d, team, p, '-', num, '근무표 입력됨 - 규칙 미등록', '', '외과 병동 근무표가 새로 입력됨 → 팀 표기 규칙 확인 필요', [ti, pi]);
-    }));
+    const w = has ? '근무표 입력됨 - 규칙 미등록' : '(이번 달 근무표 미입력)', wn = has ? '외과 병동 근무표가 새로 입력됨 → 팀 표기 규칙 확인 필요' : '';
+    for (const d of cx.days) {
+      for (const t of 'DE') c.teams.forEach(([team, profs, num], ti) => profs.forEach((p, pi) => h.add(d, team, p, SHN[t], num, w, 'Part call · 병동 전담은 ER call 안 받음', wn, [ti, pi])));
+      h.add(d, 'N duty', '교수 구분 없음', 'Night', c.night, w, 'Night는 팀 구분 없이 N duty', wn, [99, 0]);
+    }
   },
   ENT(cx, h, cfg) {
     for (const d of cx.days) {
