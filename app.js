@@ -32,14 +32,37 @@ const Crypt = {
 };
 
 /* ------------------------------------------------------------ 상태 */
-const S = { data: null, res: null, byDay: new Map(), day: 1, shift: 'D', q: '', tab: 'home', favs: new Set(LS.get('favs', [])), favOnly: !!LS.get('favOnly', false), open: new Set() };
-/* 즐겨찾기: 과 이름(근무표) · '당직:과'(당직) · 'r:과|팀|교수'(근무표 항목) · 'd:과|구분|줄'(당직 항목) — 모두 S.favs 하나에 */
+const S = { data: null, res: null, byDay: new Map(), day: 1, shift: 'D', q: '', tab: 'home', favs: null, favOnly: !!LS.get('favOnly', false), open: new Set() };
+/* 즐겨찾기: 과 이름(근무표) · '당직:과'(당직) · 'r:과||교수'·'r:과|팀|'(근무표 항목) · 'd:과|구분|줄'(당직 항목)
+ * 근무마다 맡는 과가 달라서, 별은 별을 단 근무(날짜+시간대)와 바로 다음 근무에만 적용된다. 저장: jc.favs2 = { 키: 'YYYY-MM-DD|D' } */
+const SH = ['D', 'E', 'N'];
+const ymd = (Y, M, d) => { const t = new Date(Y, M - 1, d); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+const nextDuty = a => { const [dt, s] = a.split('|'), i = SH.indexOf(s); if (i < 2) return `${dt}|${SH[i + 1]}`; const [y, m, d] = dt.split('-').map(Number); return `${ymd(y, m, d + 1)}|D`; };
+const dutyOrd = a => { const [dt, s] = a.split('|'); return dt + SH.indexOf(s); };
+const FAV = {
+  map: LS.get('favs2', {}),
+  view() { return `${ymd(S.data.Y, S.data.M, S.day)}|${S.shift}`; },
+  // 지금 보고 있는 근무에 적용되는 별인지 (당직 탭은 날짜만 봄)
+  has(k) {
+    const a = this.map[k]; if (!a || !S.data) return false;
+    const v = this.view(), n = nextDuty(a);
+    if (S.tab === 'duty') { const day = v.split('|')[0]; return a.startsWith(day) || n.startsWith(day); }
+    return a === v || n === v;
+  },
+  toggle(k) { if (this.has(k)) delete this.map[k]; else this.map[k] = this.view(); this.save(); },
+  clear() { this.map = {}; this.save(); },
+  get size() { return Object.keys(this.map).length; },
+  save() { LS.set('favs2', this.map); },
+  prune() { const p = nowPos(), now = dutyOrd(`${ymd(p.Y, p.M, p.d)}|${p.s}`); for (const [k, a] of Object.entries(this.map)) if (dutyOrd(nextDuty(a)) < now) delete this.map[k]; this.save(); },
+};
+S.favs = FAV;
+{ // 예전 즐겨찾기(기간 없음) → 지금 근무에 단 것으로
+  const old = LS.get('favs', null);
+  if (old) { const p = nowPos(), a = `${ymd(p.Y, p.M, p.d)}|${p.s}`; old.forEach(k => { FAV.map[/^r:[^|]*\|[^|]+\|.+$/.test(k) ? `r:${k.slice(2).split('|')[0]}||${k.split('|').at(-1)}` : k] = a; }); FAV.save(); LS.del('favs'); }
+  FAV.prune();
+}
 // 교수 줄은 팀 이름을 빼고 과+교수로 (신경과·신경외과·MG는 시간대마다 팀 이름이 달라 Night에서 별이 빠지지 않게)
 const rowKey = r => GENERIC.has(r.prof) ? `r:${r.dept}|${r.team}|` : `r:${r.dept}||${r.prof}`;
-{ // 예전 키(과|팀|교수) → 새 키(과||교수)
-  const old = [...S.favs].filter(k => /^r:[^|]*\|[^|]+\|.+$/.test(k));
-  if (old.length) { old.forEach(k => { S.favs.delete(k); const [dept, , prof] = k.slice(2).split('|'); S.favs.add(`r:${dept}||${prof}`); }); LS.set('favs', [...S.favs]); }
-}
 const dutyItemKey = (s, it) => 'd:' + [s.name, it.sub, it.label].join('|');
 const starSvg = (on, n = 20) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>`;
 const rowStar = k => `<button class="rstar" data-fav="${esc(k)}" aria-pressed="${S.favs.has(k)}" aria-label="즐겨찾기">${starSvg(S.favs.has(k), 17)}</button>`;
@@ -190,7 +213,7 @@ function renderHome() {
     return `<button class="chip ${S.favs.has(dept) ? 'fav' : ''}" data-go="${esc(dept)}">${S.favs.has(dept) ? '★ ' : ''}${esc(dept.replace(/^내과 /, ''))}${w ? `<span class="n">⚠${w}</span>` : ''}</button>`;
   }).join('');
   $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById('d-' + b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' })); bindFavOnly();
-  if (!groups.length && S.favOnly) { $('main').innerHTML = `<div class="empty"><b>별표한 항목이 없습니다</b>과 이름이나 항목 옆 ☆를 누르면 여기에 모입니다</div>`; return; }
+  if (!groups.length && S.favOnly) { $('main').innerHTML = `<div class="empty"><b>이 근무에 별표한 항목이 없습니다</b>☆는 단 근무와 다음 근무까지만 유지됩니다</div>`; return; }
   if (!groups.length) {
     $('main').innerHTML = `<div class="empty"><b>${S.q ? '찾는 결과가 없습니다' : '이 시간대 근무가 없습니다'}</b>${S.q ? '교수·과·간호사 이름 일부만 입력해 보세요' : '다른 근무 시간대를 눌러 보세요'}</div>`;
     return;
@@ -247,7 +270,7 @@ function numsHtml(num) {
 }
 function bindRows(root) {
   root.querySelectorAll('[data-num]').forEach(b => b.onclick = () => numAction(b.dataset.num));
-  root.querySelectorAll('[data-fav]').forEach(b => b.onclick = () => { const k = b.dataset.fav; S.favs.has(k) ? S.favs.delete(k) : S.favs.add(k); LS.set('favs', [...S.favs]); render(); });
+  root.querySelectorAll('[data-fav]').forEach(b => b.onclick = () => { FAV.toggle(b.dataset.fav); render(); });
   root.querySelectorAll('[data-more]').forEach(b => b.onclick = () => { S.open.add(b.dataset.more); render(); });
 }
 async function copy(t) { try { await navigator.clipboard.writeText(t); toast(`${t} 복사됨`); } catch { toast(t); } }
@@ -272,7 +295,7 @@ function renderDuty() {
   $('chips').innerHTML = favOnlyChip() + secs.map(s => `<button class="chip ${S.favs.has('당직:' + s.name) ? 'fav' : ''}" data-go="duty-${esc(s.name)}">${S.favs.has('당직:' + s.name) ? '★ ' : ''}${esc(s.name)}</button>`).join('');
   $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById(b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' })); bindFavOnly();
   const banner = same ? '' : `<div class="banner">당직표는 ${du.Y}년 ${du.M}월입니다 (근무표 ${S.data.Y}년 ${S.data.M}월)</div>`;
-  if (!secs.length) { $('main').innerHTML = banner + (S.favOnly ? `<div class="empty"><b>별표한 항목이 없습니다</b>과 이름이나 항목 옆 ☆를 누르면 여기에 모입니다</div>` : `<div class="empty"><b>${q ? '찾는 결과가 없습니다' : '이 날 당직표가 없습니다'}</b></div>`); return; }
+  if (!secs.length) { $('main').innerHTML = banner + (S.favOnly ? `<div class="empty"><b>이 근무에 별표한 항목이 없습니다</b>☆는 단 근무와 다음 근무까지만 유지됩니다</div>` : `<div class="empty"><b>${q ? '찾는 결과가 없습니다' : '이 날 당직표가 없습니다'}</b></div>`); return; }
   $('main').innerHTML = banner + secs.map(dutyCard).join('') + (off.length && !q ? `<p class="dutyOff">당직표 미입력 · ${esc(off.join(', '))}</p>` : '');
   bindRows($('main'));
 }
@@ -342,7 +365,7 @@ function renderSettings() {
     <button class="btn block" id="imp">파일에서 불러오기</button></div>
   <div class="card"><h3>화면</h3><div class="seg" id="theme">
     ${[['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']].map(([k, l]) => `<button data-t="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div>
-    ${S.favs.size ? `<div class="kv"><span>즐겨찾기</span><b>${S.favs.size}개</b></div><button class="btn block" id="clrFav">즐겨찾기 모두 지우기</button>` : '<p style="margin:0;color:var(--muted);font-size:13px">과 이름이나 항목 옆 ☆를 누르면 맨 위에 오고, ★ 별만으로 모아 볼 수 있습니다</p>'}</div>
+    ${S.favs.size ? `<div class="kv"><span>즐겨찾기</span><b>${S.favs.size}개</b></div><button class="btn block" id="clrFav">즐겨찾기 모두 지우기</button>` : '<p style="margin:0;color:var(--muted);font-size:13px">☆를 누르면 그 근무와 다음 근무 동안 맨 위에 오고, ★ 별만으로 모아 볼 수 있습니다</p>'}</div>
   <div class="card"><h3>보안</h3><button class="btn block" id="lockNow">비밀번호 다시 입력하기</button></div>
   ${isAdmin() ? `<div class="card"><h3>관리자</h3><p style="margin:0;color:var(--muted);font-size:13px">새 달 근무표 등록, 부서 근무표 수정(엑셀·사진), 게시는 관리자만 할 수 있습니다.</p>
     <button class="btn primary block" id="adm">관리자 화면 열기</button>
@@ -351,7 +374,7 @@ function renderSettings() {
   $('refresh').onclick = () => syncRemote(true);
   $('imp').onclick = () => pickFile('.json,application/json', importBlobFile);
   $('theme').querySelectorAll('button').forEach(b => b.onclick = () => { LS.set('theme', b.dataset.t); applyTheme(); render(); });
-  $('clrFav') && ($('clrFav').onclick = () => { S.favs.clear(); LS.set('favs', []); render(); });
+  $('clrFav') && ($('clrFav').onclick = () => { FAV.clear(); render(); });
   $('lockNow').onclick = () => { LS.del('pw'); showLock(); };
   $('adm') && ($('adm').onclick = () => window.Admin && Admin.open());
   $('admHide') && ($('admHide').onclick = () => { LS.del('adminMode'); $('adminFromLock').hidden = true; render(); });
