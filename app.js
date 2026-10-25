@@ -417,7 +417,17 @@ $('main').addEventListener('touchend', e => {
 }, { passive: true });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.data && Date.now() - lastSync > 30000) syncRemote(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.data) { const np = nowPos(); if (np.Y === S.data.Y && np.M === S.data.M && !S.q) render(); } });
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+// 새 버전 반영: sw.js는 HTTP 캐시 없이 확인, 다시 열 때마다 업데이트 확인, 새 버전이 자리 잡으면 화면을 한 번 새로 고침(관리자 작업 중이면 안 함)
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  const had = !!navigator.serviceWorker.controller; let reloaded = false;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!had || reloaded || (window.Admin && (Admin.dirty || Admin.busy))) return;
+    reloaded = true; location.reload();
+  });
+}
 
 window.App = { S, LS, Crypt, setData, render, toast, openSheet, closeSheet, pickFile, esc, $, DATA_URL, showLock };
 boot();
