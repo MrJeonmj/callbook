@@ -63,7 +63,7 @@ const isAdmin = () => !!LS.get('adminMode');
 async function boot() {
   applyTheme();
   $('adminFromLock').hidden = !isAdmin();
-  const remote = await fetchBlob();
+  lastSync = Date.now(); const remote = await fetchBlob();
   const local = LS.get('blob');
   let blob = local;
   if (remote && (!local || remote.updatedAt !== local.updatedAt)) { blob = remote; LS.set('blob', remote); }
@@ -72,6 +72,16 @@ async function boot() {
   if (!pw) return showLock();
   try { setData(await Crypt.open(blob, pw)); }
   catch { showLock('비밀번호가 바뀌었습니다. 새 비밀번호를 입력하세요.'); }
+}
+/* 게시된 근무표가 바뀌었으면 받아서 교체 (앱을 다시 열 때마다 자동) */
+let lastSync = 0;
+async function syncRemote(manual) {
+  if (window.Admin && (Admin.dirty || Admin.busy)) return manual && toast('게시 안 한 관리자 변경이 있어 받지 않았습니다');
+  lastSync = Date.now();
+  const r = await fetchBlob(); if (!r) return manual && toast('서버에서 받지 못했습니다');
+  const cur = LS.get('blob'); if (cur && cur.updatedAt === r.updatedAt) return manual && toast('이미 최신입니다');
+  LS.set('blob', r);
+  try { setData(await Crypt.open(r, LS.get('pw'))); toast(`${r.month} 근무표를 새로 받았습니다`); } catch { showLock('새 근무표의 비밀번호를 입력하세요'); }
 }
 function showLock(msg) {
   $('appView').hidden = true; $('lockView').hidden = false;
@@ -273,11 +283,7 @@ function renderSettings() {
     <button class="btn primary block" id="adm">관리자 화면 열기</button>
     <button class="btn block" id="admHide">이 기기에서 관리자 메뉴 숨기기</button></div>` : ''}
   <p style="text-align:center;color:var(--faint);font-size:12px">전담 콜북 · ${esc(d.sourceName || '')}</p>`;
-  $('refresh').onclick = async () => {
-    const r = await fetchBlob(); if (!r) return toast('서버에서 받지 못했습니다');
-    const cur = LS.get('blob'); if (cur && cur.updatedAt === r.updatedAt) return toast('이미 최신입니다');
-    LS.set('blob', r); try { setData(await Crypt.open(r, LS.get('pw'))); toast(`${r.month} 근무표로 바꿨습니다`); } catch { showLock('새 근무표의 비밀번호를 입력하세요'); }
-  };
+  $('refresh').onclick = () => syncRemote(true);
   $('imp').onclick = () => pickFile('.json,application/json', importBlobFile);
   $('theme').querySelectorAll('button').forEach(b => b.onclick = () => { LS.set('theme', b.dataset.t); applyTheme(); render(); });
   $('clrFav') && ($('clrFav').onclick = () => { S.favs.clear(); LS.set('favs', []); render(); });
@@ -321,6 +327,7 @@ $('main').addEventListener('touchend', e => {
   if (!sx || S.tab !== 'home') return; const dx = e.changedTouches[0].clientX - sx[0], dy = e.changedTouches[0].clientY - sx[1]; sx = null;
   if (Math.abs(dx) > 80 && Math.abs(dy) < 40) (dx < 0 ? $('next') : $('prev')).click();
 }, { passive: true });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.data && Date.now() - lastSync > 30000) syncRemote(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.data) { const np = nowPos(); if (np.Y === S.data.Y && np.M === S.data.M && !S.q) render(); } });
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 

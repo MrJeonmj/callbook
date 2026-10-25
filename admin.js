@@ -373,5 +373,5 @@ function showLog() {
   openSheet(`<div class="admin stack"><h3>변경 이력</h3>${l.length ? l.map(x => `<div class="diffItem"><span style="font-size:12px;color:var(--muted)">${new Date(x.at).toLocaleString('ko-KR')}</span><span>${esc(x.what)}</span></div>`).join('') : '<p class="sub">이력이 없습니다</p>'}${back()}</div>`); bindBack();
 }
 
-window.Admin = { open, get busy() { return A.busy; } };
+window.Admin = { open, get busy() { return A.busy; }, get dirty() { return A.dirty; } };
 })();
