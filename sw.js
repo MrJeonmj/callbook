@@ -1,7 +1,7 @@
 /* 전담 콜북 — 오프라인 캐시. 앱 파일을 바꾸면 VERSION을 올리세요. */
-const VERSION = 'callbook-v19';
+const VERSION = 'callbook-v20';
 const FONT_HOSTS = ['cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
-const SHELL = ['./', 'index.html', 'engine.js', 'app.js', 'xlsxw.js', 'admin.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const SHELL = ['./', 'index.html', 'engine.js', 'app.js', 'xlsxw.js', 'admin.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/logo.svg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
