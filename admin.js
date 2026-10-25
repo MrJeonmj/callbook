@@ -17,12 +17,49 @@ const DOMAIN = `당신은 병원 "전담간호사 근무표"를 교수별 내선
 셀 색: 비뇨(외래/병동) 노란색 = 병동 전담 Primary call 근무자, 심장혈관외과 파란 배경 = AICU 근무자.
 사용자 원칙: 번호가 틀린 날이 있으면 안 됩니다. 확실하지 않으면 추측하지 말고 unclear로 보고하거나 비워 두세요. 답변은 한국어로.`;
 
+/* ------------------------------------------------------------ 키·토큰 보관 (관리자 PIN으로 암호화)
+ * jc.admin = 일반 설정(모델·저장소 이름 등), jc.adminSec = { apiKey, token }을 PIN으로 AES-256 암호화한 것.
+ * 풀린 값은 앱을 닫을 때까지 메모리(SEC)에만 둔다. 예전 평문 저장분은 PIN을 정해 저장하면 암호화로 바뀐다. */
+let SEC = null, PIN = '';
+const legacySec = () => { const c = cfgA(); return c.apiKey || c.gh?.token ? { apiKey: c.apiKey || '', token: c.gh?.token || '' } : null; };
+const hasApiKey = () => !!(cfgA().apiKey || LS.get('adminSec')?.hasKey);
+const hasSec = () => !!(legacySec() || LS.get('adminSec'));
+async function secrets() {
+  if (SEC) return SEC;
+  const old = legacySec(); if (old) return old;
+  const enc = LS.get('adminSec'); if (!enc) return { apiKey: '', token: '' };
+  let msg = '';
+  for (;;) {
+    const pin = await askPin(msg); if (pin == null) throw new Error('관리자 PIN을 입력해야 합니다');
+    try { SEC = await Crypt.open(enc, pin); PIN = pin; return SEC; } catch { msg = 'PIN이 맞지 않습니다'; }
+  }
+}
+function askPin(msg) {
+  return new Promise(res => {
+    const el = document.createElement('div'); el.className = 'pinBox';
+    el.innerHTML = `<div class="box stack"><h3>관리자 PIN</h3>${msg ? `<p class="wt" style="color:var(--bad)">${esc(msg)}</p>` : ''}
+      <input id="pinIn" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
+      <button class="btn primary block" id="pinOk">확인</button><button class="btn block" id="pinNo">취소</button>
+      <button class="btn block" id="pinForgot" style="background:none;border:0;color:var(--muted)">PIN을 잊었어요</button></div>`;
+    document.body.append(el);
+    const i = el.querySelector('#pinIn'); setTimeout(() => i.focus(), 50);
+    const done = v => { el.remove(); res(v); };
+    el.querySelector('#pinOk').onclick = () => done(i.value);
+    i.onkeydown = e => { if (e.key === 'Enter') done(i.value); };
+    el.querySelector('#pinNo').onclick = () => done(null);
+    el.querySelector('#pinForgot').onclick = () => {
+      if (!confirm('저장된 Claude API 키와 GitHub 토큰을 지웁니다.\n관리자 설정에서 다시 넣고 새 PIN을 정하세요.')) return;
+      LS.del('adminSec'); SEC = null; PIN = ''; done(null); toast('지웠습니다. 관리자 설정에서 다시 넣어 주세요');
+    };
+  });
+}
+
 async function claude({ system, content, tool, maxTokens = 16000 }) {
-  const c = cfgA();
-  if (!c.apiKey) throw new Error('관리자 설정에 Claude API 키를 넣어 주세요');
+  const c = cfgA(), { apiKey } = await secrets();
+  if (!apiKey) throw new Error('관리자 설정에 Claude API 키를 넣어 주세요');
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': c.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
     body: JSON.stringify({ model: c.model || 'claude-sonnet-4-5', max_tokens: maxTokens, system, messages: [{ role: 'user', content }], tools: [tool], tool_choice: { type: 'tool', name: tool.name } }),
   });
   const j = await r.json().catch(() => ({}));
@@ -72,9 +109,10 @@ function header() {
 function open() {
   const c = cfgA();
   if (!A.draft && App.S.data) A.draft = clone(App.S.data);
-  const ready = c.apiKey && c.pw;
+  const ready = hasApiKey() && c.pw;
   openSheet(`<div class="admin stack">${header()}
     ${!ready ? '<div class="banner">먼저 아래 "관리자 설정"에서 Claude API 키와 근무표 비밀번호를 넣어 주세요.</div>' : ''}
+    ${legacySec() ? '<div class="banner">관리자 설정에서 PIN을 정해 저장하면 키·토큰이 암호화됩니다.</div>' : ''}
     <button class="btn brand block" id="aNew">새 달 근무표 올리기 (엑셀)</button>
     <button class="btn block" id="aFix" ${A.draft ? '' : 'disabled'}>부서 근무표 수정 (엑셀·사진)</button>
     <button class="btn block" id="aRule" ${A.draft ? '' : 'disabled'}>번호 규칙 보기·수정</button>
@@ -107,7 +145,7 @@ function bindBack() { document.querySelectorAll('[data-back]').forEach(b => b.on
 function settings() {
   const c = cfgA();
   openSheet(`<div class="admin stack"><h3>관리자 설정</h3><p class="sub">이 휴대폰에만 저장됩니다. 다른 사람 앱에는 들어가지 않습니다.</p>
-    <label class="field">Claude API 키<input id="sKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-ant-..." autocomplete="off"></label>
+    <label class="field">Claude API 키<input id="sKey" type="password" value="" placeholder="${hasApiKey() ? '저장됨 · 바꿀 때만 입력' : 'sk-ant-...'}" autocomplete="off"></label>
     <label class="field">모델<select id="sModel"><option value="${esc(c.model)}">${esc(c.model || '키 입력 후 "모델 불러오기"')}</option></select></label>
     <button class="btn block" id="sLoad">모델 불러오기 · 연결 확인</button>
     <label class="field">근무표 비밀번호 (모든 사용자가 같은 비밀번호로 엽니다)<input id="sPw" type="password" value="${esc(c.pw || LS.get('pw') || '')}" autocomplete="new-password"></label>
@@ -116,17 +154,20 @@ function settings() {
     <label class="field">저장소(repo)<input id="sRepo" value="${esc(c.gh.repo)}" autocapitalize="off"></label>
     <label class="field">브랜치<input id="sBranch" value="${esc(c.gh.branch || 'main')}" autocapitalize="off"></label>
     <label class="field">데이터 파일 경로<input id="sPath" value="${esc(c.gh.path || App.DATA_URL)}" autocapitalize="off"></label>
-    <label class="field">GitHub 토큰 (Contents 쓰기 권한)<input id="sTok" type="password" value="${esc(c.gh.token)}" autocomplete="off"></label>
+    <label class="field">GitHub 토큰 (Contents 쓰기 권한)<input id="sTok" type="password" value="" placeholder="${legacySec()?.token || LS.get('adminSec')?.hasToken ? '저장됨 · 바꿀 때만 입력' : 'github_pat_...'}" autocomplete="off"></label>
     <button class="btn block" id="sGh">GitHub 연결 확인</button>
+    <h4>관리자 PIN</h4>
+    <label class="field">키·토큰을 이 PIN으로 암호화해 저장합니다 (4자리 이상)<input id="sPin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="${LS.get('adminSec') ? '정해져 있음 · 바꿀 때만 입력' : '새 PIN'}"></label>
     ${busyHtml}
     <button class="btn primary block" id="sSave">저장</button>${back()}</div>`);
   bindBack();
-  const read = () => ({ apiKey: $('sKey').value.trim(), model: $('sModel').value, pw: $('sPw').value,
-    gh: { owner: $('sOwner').value.trim(), repo: $('sRepo').value.trim(), branch: $('sBranch').value.trim() || 'main', path: $('sPath').value.trim() || App.DATA_URL, token: $('sTok').value.trim() } });
+  // 키·토큰은 jc.admin에 넣지 않는다 (PIN 암호화 → jc.adminSec)
+  const read = () => ({ model: $('sModel').value, pw: $('sPw').value,
+    gh: { owner: $('sOwner').value.trim(), repo: $('sRepo').value.trim(), branch: $('sBranch').value.trim() || 'main', path: $('sPath').value.trim() || App.DATA_URL } });
   $('sLoad').onclick = async () => {
     busy('모델 목록을 불러오는 중…');
     try {
-      const ms = await listModels($('sKey').value.trim());
+      const ms = await listModels($('sKey').value.trim() || (await secrets()).apiKey);
       const cur = $('sModel').value;
       const pref = ms.find(m => m.id === cur) || ms.find(m => /sonnet/i.test(m.id)) || ms[0];
       $('sModel').innerHTML = ms.map(m => `<option value="${esc(m.id)}" ${m.id === pref?.id ? 'selected' : ''}>${esc(m.name)} (${esc(m.id)})</option>`).join('');
@@ -136,7 +177,7 @@ function settings() {
   };
   $('sGh').onclick = async () => {
     const g = read().gh; busy('GitHub 확인 중…');
-    try { const r = await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}`, { headers: ghHeaders(g.token) }); const j = await r.json();
+    try { const token = $('sTok').value.trim() || (await secrets()).token; const r = await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}`, { headers: ghHeaders(token) }); const j = await r.json();
       if (!r.ok) throw new Error(j.message || r.status);
       toast(j.permissions?.push ? '쓰기 권한 확인됨' : '저장소는 보이지만 쓰기 권한이 없습니다');
     } catch (e) { toast('GitHub 실패: ' + e.message); }
@@ -150,6 +191,14 @@ function settings() {
       const same = await Crypt.open(blob, n.pw).then(() => true, () => false);
       if (!same && !confirm('게시된 근무표와 다른 비밀번호입니다.\n이대로 게시하면 모든 사용자가 새 비밀번호를 입력해야 합니다.\n바꿀까요?')) return;
     }
+    // 키·토큰: 새로 넣은 것 + (안 넣은 칸은) 기존 것을 PIN으로 암호화해 저장
+    const keyIn = $('sKey').value.trim(), tokIn = $('sTok').value.trim(), pinIn = $('sPin').value;
+    if (pinIn && pinIn.length < 4) return toast('PIN은 4자리 이상으로 해 주세요');
+    let old = { apiKey: '', token: '' };
+    try { if ((!keyIn || !tokIn) && hasSec()) old = await secrets(); } catch (e) { return toast(e.message); }
+    const next = { apiKey: keyIn || old.apiKey, token: tokIn || old.token }, pin = pinIn || PIN;
+    if ((next.apiKey || next.token) && !pin) return toast('관리자 PIN을 정해 주세요');
+    if (next.apiKey || next.token) { LS.set('adminSec', { ...(await Crypt.seal(next, pin)), hasKey: !!next.apiKey, hasToken: !!next.token }); SEC = next; PIN = pin; }
     LS.set('admin', n); if (n.pw && !blob) LS.set('pw', n.pw); toast('저장했습니다'); open();
   };
 }
@@ -188,7 +237,7 @@ function newMonth() {
         }
       };
       $('nmAi').onclick = async () => { fix(); await review(draft, $('nmAiOut')); };
-      if (cfgA().apiKey) { $('nmAi').textContent = 'Claude로 메모 다시 검토'; fix(); review(draft, $('nmAiOut')); }   // 키가 있으면 자동 검토
+      if (hasApiKey()) { $('nmAi').textContent = 'Claude로 메모 다시 검토'; fix(); review(draft, $('nmAiOut')); }   // 키가 있으면 자동 검토
       $('nmApply').onclick = () => { fix(); A.draft = draft; A.dirty = true; setData(clone(draft)); toast('미리보기로 바꿨습니다. 확인 후 게시하세요'); open(); };
     } catch (e) { busy(''); $('nm').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
   });
@@ -329,7 +378,7 @@ function showDeptDiff(ui, r, wholeUnit) {
   // 수정본 엑셀의 메모가 바뀌었으면 그 과만 Claude 검토(키가 있을 때). 적용한 규칙은 "이대로 반영" 때 함께 들어간다
   const md = wholeUnit ? Engine.memoDiff([u], [nu]) : {};
   let tmp = null;
-  if (md[u.key] && cfgA().apiKey) {
+  if (md[u.key] && hasApiKey()) {
     tmp = { ...d, cfg: clone(d.cfg), log: [], memoChanged: md, units: d.units.map((x, i) => i === ui ? nu : x) };
     $('fxOut').insertAdjacentHTML('beforeend', '<div id="fxAi" class="diff" style="margin-top:8px"></div>'); review(tmp, $('fxAi'), [u.key]);
   }
@@ -479,7 +528,8 @@ function saveBlob(blob, name) { const a = document.createElement('a'); a.href = 
 async function sealed() { const c = cfgA(); if (!c.pw) throw new Error('관리자 설정에서 근무표 비밀번호를 정해 주세요'); return Crypt.seal(A.draft, c.pw); }
 const utf8b64 = s => { const u8 = new TextEncoder().encode(s); let b = ''; for (let i = 0; i < u8.length; i += 0x8000) b += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(b); };
 async function publish() {
-  const c = cfgA(), g = c.gh;
+  const c = cfgA(), g = { ...c.gh };
+  try { g.token = (await secrets()).token; } catch (e) { return toast(e.message); }
   if (!g.owner || !g.repo || !g.token) return toast('관리자 설정에서 GitHub 정보를 넣어 주세요');
   openSheet(`<div class="admin stack"><h3>게시</h3>${busyHtml}<div id="pbOut"></div>${back()}</div>`); bindBack();
   busy('암호화 중…');

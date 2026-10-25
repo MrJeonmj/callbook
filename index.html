@@ -360,6 +360,10 @@ nav.tabs button[aria-current="page"] { color: #fff; background: var(--brand-grad
 .dnotes p.madd { background: var(--warn-soft); border-radius: 6px; padding: 2px 6px; margin-left: -6px; margin-right: -6px; color: var(--ink) }
 .dnotes p.madd::before { content: "새 문구 · "; font-weight: 800; color: var(--warn) }
 .dnotes p.mdel { color: var(--faint) }
+.pinBox { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; background: rgba(8,12,10,.45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px) }
+.pinBox .box { width: 100%; max-width: 340px; background: var(--surface); border-radius: 20px; padding: 20px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.5); text-align: center }
+.pinBox h3 { margin: 0; font-size: 17px } .pinBox p { margin: 0 }
+.pinBox input { width: 100%; border: 1px solid var(--line2); border-radius: 12px; padding: 11px; text-align: center; font-size: 20px; letter-spacing: 6px; background: var(--bg); color: var(--ink) }
 .dutyOff { text-align: center; color: var(--faint); font-size: 12px; margin: 4px 0 0 }
 </style>
 </head>
