@@ -221,7 +221,7 @@ function rowHtml(r, showShift) {
   const sb = showShift || !/^(Day|Evening|Night)$/.test(r.shift) ? `<span class="badge ${sg !== '*' ? 's-' + sg : ''}">${esc(r.shift)}</span>` : '';
   const tb = !generic && r.team && r.team !== '-' ? `<span class="badge">${esc(r.team)}</span>` : '';
   return `<div class="row ${r.warn ? 'warn' : ''}">
-    <div class="who"><div class="p">${esc(title)} ${tb}${sb}${rowStar(rowKey(r))}</div>
+    <div class="who"><div class="p">${rowStar(rowKey(r))}${esc(title)} ${tb}${sb}</div>
       ${r.workers && r.workers !== '-' ? `<div class="w2">${esc(r.workers)}</div>` : ''}
       ${r.warn ? `<div class="wt">⚠ ${esc(r.warn)}</div>` : ''}
       ${r.note ? `<div class="nt">${esc(r.note)}</div>` : ''}</div>
@@ -280,7 +280,7 @@ function dutyCard(s) {
     ${s.items.map(it => {
       const who = it.people.length ? it.people.map(p => `${esc(p.name)}${p.role && p.role !== 'Pf' ? ` <span class="badge">${esc(p.role)}</span>` : ''}`).join(', ') : /^[xX×]$/.test(it.text.trim()) ? '<span style="color:var(--faint)">당직 없음</span>' : esc(it.text);
       const extra = it.people.length && it.text.replace(/\s/g, '') !== it.people.map(p => p.name).join('') && !/^[A-Z]{1,2}$/.test(it.text.trim()) ? `<div class="nt">${esc(it.text)}</div>` : '';
-      return `<div class="row"><div class="who"><div class="p">${who}${rowStar(dutyItemKey(s, it))}</div><div class="w2">${esc((it.sub ? it.sub + ' · ' : '') + it.label)}</div>${extra}</div>
+      return `<div class="row"><div class="who"><div class="p">${rowStar(dutyItemKey(s, it))}${who}</div><div class="w2">${esc((it.sub ? it.sub + ' · ' : '') + it.label)}</div>${extra}</div>
         <div class="nums">${it.people.map(p => numsHtml(p.phone)).join('')}</div></div>`;
     }).join('')}
     ${s.notes.length ? `<details class="dnotes"><summary>call 순서 · 메모</summary>${s.notes.map(n => `<p>${esc(n).replace(NOTE_NUM, t => `<button class="badge" data-num="${t}">${t}</button>`)}</p>`).join('')}</details>` : ''}
