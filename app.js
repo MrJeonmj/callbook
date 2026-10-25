@@ -34,7 +34,12 @@ const Crypt = {
 /* ------------------------------------------------------------ 상태 */
 const S = { data: null, res: null, byDay: new Map(), day: 1, shift: 'D', q: '', tab: 'home', favs: new Set(LS.get('favs', [])), favOnly: !!LS.get('favOnly', false), open: new Set() };
 /* 즐겨찾기: 과 이름(근무표) · '당직:과'(당직) · 'r:과|팀|교수'(근무표 항목) · 'd:과|구분|줄'(당직 항목) — 모두 S.favs 하나에 */
-const rowKey = r => 'r:' + [r.dept, r.team, GENERIC.has(r.prof) ? '' : r.prof].join('|');
+// 교수 줄은 팀 이름을 빼고 과+교수로 (신경과·신경외과·MG는 시간대마다 팀 이름이 달라 Night에서 별이 빠지지 않게)
+const rowKey = r => GENERIC.has(r.prof) ? `r:${r.dept}|${r.team}|` : `r:${r.dept}||${r.prof}`;
+{ // 예전 키(과|팀|교수) → 새 키(과||교수)
+  const old = [...S.favs].filter(k => /^r:[^|]*\|[^|]+\|.+$/.test(k));
+  if (old.length) { old.forEach(k => { S.favs.delete(k); const [dept, , prof] = k.slice(2).split('|'); S.favs.add(`r:${dept}||${prof}`); }); LS.set('favs', [...S.favs]); }
+}
 const dutyItemKey = (s, it) => 'd:' + [s.name, it.sub, it.label].join('|');
 const starSvg = (on, n = 20) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>`;
 const rowStar = k => `<button class="rstar" data-fav="${esc(k)}" aria-pressed="${S.favs.has(k)}" aria-label="즐겨찾기">${starSvg(S.favs.has(k), 17)}</button>`;
@@ -220,8 +225,8 @@ function rowHtml(r, showShift) {
   const sg = shiftGroup(r.shift);
   const sb = showShift || !/^(Day|Evening|Night)$/.test(r.shift) ? `<span class="badge ${sg !== '*' ? 's-' + sg : ''}">${esc(r.shift)}</span>` : '';
   const tb = !generic && r.team && r.team !== '-' ? `<span class="badge">${esc(r.team)}</span>` : '';
-  return `<div class="row ${r.warn ? 'warn' : ''}">
-    <div class="who"><div class="p">${rowStar(rowKey(r))}${esc(title)} ${tb}${sb}</div>
+  return `<div class="row ${r.warn ? 'warn' : ''}">${rowStar(rowKey(r))}
+    <div class="who"><div class="p">${esc(title)} ${tb}${sb}</div>
       ${r.workers && r.workers !== '-' ? `<div class="w2">${esc(r.workers)}</div>` : ''}
       ${r.warn ? `<div class="wt">⚠ ${esc(r.warn)}</div>` : ''}
       ${r.note ? `<div class="nt">${esc(r.note)}</div>` : ''}</div>
@@ -280,7 +285,7 @@ function dutyCard(s) {
     ${s.items.map(it => {
       const who = it.people.length ? it.people.map(p => `${esc(p.name)}${p.role && p.role !== 'Pf' ? ` <span class="badge">${esc(p.role)}</span>` : ''}`).join(', ') : /^[xX×]$/.test(it.text.trim()) ? '<span style="color:var(--faint)">당직 없음</span>' : esc(it.text);
       const extra = it.people.length && it.text.replace(/\s/g, '') !== it.people.map(p => p.name).join('') && !/^[A-Z]{1,2}$/.test(it.text.trim()) ? `<div class="nt">${esc(it.text)}</div>` : '';
-      return `<div class="row"><div class="who"><div class="p">${rowStar(dutyItemKey(s, it))}${who}</div><div class="w2">${esc((it.sub ? it.sub + ' · ' : '') + it.label)}</div>${extra}</div>
+      return `<div class="row">${rowStar(dutyItemKey(s, it))}<div class="who"><div class="p">${who}</div><div class="w2">${esc((it.sub ? it.sub + ' · ' : '') + it.label)}</div>${extra}</div>
         <div class="nums">${it.people.map(p => numsHtml(p.phone)).join('')}</div></div>`;
     }).join('')}
     ${s.notes.length ? `<details class="dnotes"><summary>call 순서 · 메모</summary>${s.notes.map(n => `<p>${esc(n).replace(NOTE_NUM, t => `<button class="badge" data-num="${t}">${t}</button>`)}</p>`).join('')}</details>` : ''}
