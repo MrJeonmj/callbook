@@ -57,8 +57,12 @@ async function fetchBlob() {
     const j = await r.json(); return j && j.ct ? j : null;
   } catch { return null; }
 }
+/* 관리자 메뉴는 관리자 기기에서만 보인다: 주소 끝에 #admin으로 한 번 열면 그 기기에 기억 */
+if (location.hash === '#admin') { LS.set('adminMode', true); history.replaceState(null, '', location.pathname + location.search); }
+const isAdmin = () => !!LS.get('adminMode');
 async function boot() {
   applyTheme();
+  $('adminFromLock').hidden = !isAdmin();
   const remote = await fetchBlob();
   const local = LS.get('blob');
   let blob = local;
@@ -265,8 +269,9 @@ function renderSettings() {
     ${[['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']].map(([k, l]) => `<button data-t="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div>
     ${S.favs.size ? `<div class="kv"><span>즐겨찾기</span><b>${esc([...S.favs].join(', '))}</b></div><button class="btn block" id="clrFav">즐겨찾기 모두 지우기</button>` : '<p style="margin:0;color:var(--muted);font-size:13px">과 이름 옆 ☆를 누르면 즐겨찾기가 맨 위에 옵니다</p>'}</div>
   <div class="card"><h3>보안</h3><button class="btn block" id="lockNow">비밀번호 다시 입력하기</button></div>
-  <div class="card"><h3>관리자</h3><p style="margin:0;color:var(--muted);font-size:13px">새 달 근무표 등록, 부서 근무표 수정(엑셀·사진), 게시는 관리자만 할 수 있습니다.</p>
-    <button class="btn primary block" id="adm">관리자 화면 열기</button></div>
+  ${isAdmin() ? `<div class="card"><h3>관리자</h3><p style="margin:0;color:var(--muted);font-size:13px">새 달 근무표 등록, 부서 근무표 수정(엑셀·사진), 게시는 관리자만 할 수 있습니다.</p>
+    <button class="btn primary block" id="adm">관리자 화면 열기</button>
+    <button class="btn block" id="admHide">이 기기에서 관리자 메뉴 숨기기</button></div>` : ''}
   <p style="text-align:center;color:var(--faint);font-size:12px">전담 콜북 · ${esc(d.sourceName || '')}</p>`;
   $('refresh').onclick = async () => {
     const r = await fetchBlob(); if (!r) return toast('서버에서 받지 못했습니다');
@@ -277,7 +282,8 @@ function renderSettings() {
   $('theme').querySelectorAll('button').forEach(b => b.onclick = () => { LS.set('theme', b.dataset.t); applyTheme(); render(); });
   $('clrFav') && ($('clrFav').onclick = () => { S.favs.clear(); LS.set('favs', []); render(); });
   $('lockNow').onclick = () => { LS.del('pw'); showLock(); };
-  $('adm').onclick = () => window.Admin && Admin.open();
+  $('adm') && ($('adm').onclick = () => window.Admin && Admin.open());
+  $('admHide') && ($('admHide').onclick = () => { LS.del('adminMode'); $('adminFromLock').hidden = true; render(); });
 }
 
 /* ------------------------------------------------------------ 시트 / 토스트 / 달력 */
