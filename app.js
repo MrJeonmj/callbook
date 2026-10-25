@@ -32,7 +32,15 @@ const Crypt = {
 };
 
 /* ------------------------------------------------------------ 상태 */
-const S = { data: null, res: null, byDay: new Map(), day: 1, shift: 'D', q: '', tab: 'home', favs: new Set(LS.get('favs', [])), open: new Set() };
+const S = { data: null, res: null, byDay: new Map(), day: 1, shift: 'D', q: '', tab: 'home', favs: new Set(LS.get('favs', [])), favOnly: !!LS.get('favOnly', false), open: new Set() };
+/* 즐겨찾기: 과 이름(근무표) · '당직:과'(당직) · 'r:과|팀|교수'(근무표 항목) · 'd:과|구분|줄'(당직 항목) — 모두 S.favs 하나에 */
+const rowKey = r => 'r:' + [r.dept, r.team, GENERIC.has(r.prof) ? '' : r.prof].join('|');
+const dutyItemKey = (s, it) => 'd:' + [s.name, it.sub, it.label].join('|');
+const starSvg = (on, n = 20) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>`;
+const rowStar = k => `<button class="rstar" data-fav="${esc(k)}" aria-pressed="${S.favs.has(k)}" aria-label="즐겨찾기">${starSvg(S.favs.has(k), 17)}</button>`;
+const favFirst = (arr, key) => [...arr].sort((a, b) => S.favs.has(key(b)) - S.favs.has(key(a)));
+const favOnlyChip = () => `<button class="chip ${S.favOnly ? 'fav' : ''}" id="favOnly" aria-pressed="${S.favOnly}">★ 별만</button>`;
+function bindFavOnly() { const b = $('favOnly'); if (b) b.onclick = () => { S.favOnly = !S.favOnly; LS.set('favOnly', S.favOnly); render(); window.scrollTo(0, 0); }; }
 const GENERIC = new Set(['교수 구분 없음', '-', '전체', '교수 상관없음']);
 function shiftGroup(label) {
   if (/^Evening|^E\d/.test(label)) return 'E';
@@ -156,8 +164,9 @@ const SEARCH_HINT = { home: '교수 · 과 · 간호사 · 번호 검색', prof:
 function visibleRows() {
   const all = S.byDay.get(S.day) || [];
   const q = S.q.trim().toLowerCase();
-  if (q) return all.filter(r => [r.dept, r.team, r.prof, r.workers, r.number, r.note].join(' ').toLowerCase().includes(q));
-  return all.filter(r => { const g = shiftGroup(r.shift); return g === S.shift || g === '*'; });
+  const fav = r => !S.favOnly || S.favs.has(r.dept) || S.favs.has(rowKey(r));
+  if (q) return all.filter(r => fav(r) && [r.dept, r.team, r.prof, r.workers, r.number, r.note].join(' ').toLowerCase().includes(q));
+  return all.filter(r => { const g = shiftGroup(r.shift); return fav(r) && (g === S.shift || g === '*'); });
 }
 function groupByDept(rows) {
   const m = new Map();
@@ -171,11 +180,12 @@ function renderHome() {
   const groups = groupByDept(rows);
   const issues = [];
   if (S.res.changed.length) issues.push(`원본 메모와 번호 규칙이 다른 과: ${S.res.changed.map(c => c.name).join(', ')}`);
-  $('chips').innerHTML = groups.map(([dept, rs]) => {
+  $('chips').innerHTML = favOnlyChip() + groups.map(([dept, rs]) => {
     const w = rs.filter(r => r.warn).length;
     return `<button class="chip ${S.favs.has(dept) ? 'fav' : ''}" data-go="${esc(dept)}">${S.favs.has(dept) ? '★ ' : ''}${esc(dept.replace(/^내과 /, ''))}${w ? `<span class="n">⚠${w}</span>` : ''}</button>`;
   }).join('');
-  $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById('d-' + b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById('d-' + b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' })); bindFavOnly();
+  if (!groups.length && S.favOnly) { $('main').innerHTML = `<div class="empty"><b>별표한 항목이 없습니다</b>과 이름이나 항목 옆 ☆를 누르면 여기에 모입니다</div>`; return; }
   if (!groups.length) {
     $('main').innerHTML = `<div class="empty"><b>${S.q ? '찾는 결과가 없습니다' : '이 시간대 근무가 없습니다'}</b>${S.q ? '교수·과·간호사 이름 일부만 입력해 보세요' : '다른 근무 시간대를 눌러 보세요'}</div>`;
     return;
@@ -186,6 +196,7 @@ function renderHome() {
 function deptCard(dept, rs, showShift) {
   const w = rs.filter(r => r.warn).length;
   const limit = 14, opened = S.open.has(dept) || showShift;
+  rs = favFirst(rs, rowKey);
   const shown = opened ? rs : rs.slice(0, limit);
   return `<section class="dept" id="d-${esc(dept)}">
     <header><h2>${esc(dept)}</h2>${w ? `<span class="w">⚠ ${w}</span>` : ''}
@@ -210,7 +221,7 @@ function rowHtml(r, showShift) {
   const sb = showShift || !/^(Day|Evening|Night)$/.test(r.shift) ? `<span class="badge ${sg !== '*' ? 's-' + sg : ''}">${esc(r.shift)}</span>` : '';
   const tb = !generic && r.team && r.team !== '-' ? `<span class="badge">${esc(r.team)}</span>` : '';
   return `<div class="row ${r.warn ? 'warn' : ''}">
-    <div class="who"><div class="p">${esc(title)} ${tb}${sb}</div>
+    <div class="who"><div class="p">${esc(title)} ${tb}${sb}${rowStar(rowKey(r))}</div>
       ${r.workers && r.workers !== '-' ? `<div class="w2">${esc(r.workers)}</div>` : ''}
       ${r.warn ? `<div class="wt">⚠ ${esc(r.warn)}</div>` : ''}
       ${r.note ? `<div class="nt">${esc(r.note)}</div>` : ''}</div>
@@ -248,13 +259,15 @@ function renderDuty() {
   const same = du.Y === S.data.Y && du.M === S.data.M;
   const all = Engine.dutyFor(du, Math.min(S.day, du.nDays)), q = S.q.trim().replace(/\s/g, '');
   const hit = it => (it.label + it.text + it.people.map(p => p.name + p.phone).join()).replace(/\s/g, '').includes(q);
-  let secs = all.filter(s => s.items.length).map(s => q && !s.name.includes(q) ? { ...s, items: s.items.filter(hit) } : s).filter(s => s.items.length);
+  let secs = all.filter(s => s.items.length).map(s => q && !s.name.includes(q) ? { ...s, items: s.items.filter(hit) } : s)
+    .map(s => S.favOnly && !S.favs.has('당직:' + s.name) ? { ...s, items: s.items.filter(it => S.favs.has(dutyItemKey(s, it))) } : s)
+    .map(s => ({ ...s, items: favFirst(s.items, it => dutyItemKey(s, it)) })).filter(s => s.items.length);
   secs.sort((a, b) => S.favs.has('당직:' + b.name) - S.favs.has('당직:' + a.name));
   const off = all.filter(s => !s.filled).map(s => s.name);
-  $('chips').innerHTML = secs.map(s => `<button class="chip ${S.favs.has('당직:' + s.name) ? 'fav' : ''}" data-go="duty-${esc(s.name)}">${S.favs.has('당직:' + s.name) ? '★ ' : ''}${esc(s.name)}</button>`).join('');
-  $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById(b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  $('chips').innerHTML = favOnlyChip() + secs.map(s => `<button class="chip ${S.favs.has('당직:' + s.name) ? 'fav' : ''}" data-go="duty-${esc(s.name)}">${S.favs.has('당직:' + s.name) ? '★ ' : ''}${esc(s.name)}</button>`).join('');
+  $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById(b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' })); bindFavOnly();
   const banner = same ? '' : `<div class="banner">당직표는 ${du.Y}년 ${du.M}월입니다 (근무표 ${S.data.Y}년 ${S.data.M}월)</div>`;
-  if (!secs.length) { $('main').innerHTML = banner + `<div class="empty"><b>${q ? '찾는 결과가 없습니다' : '이 날 당직표가 없습니다'}</b></div>`; return; }
+  if (!secs.length) { $('main').innerHTML = banner + (S.favOnly ? `<div class="empty"><b>별표한 항목이 없습니다</b>과 이름이나 항목 옆 ☆를 누르면 여기에 모입니다</div>` : `<div class="empty"><b>${q ? '찾는 결과가 없습니다' : '이 날 당직표가 없습니다'}</b></div>`); return; }
   $('main').innerHTML = banner + secs.map(dutyCard).join('') + (off.length && !q ? `<p class="dutyOff">당직표 미입력 · ${esc(off.join(', '))}</p>` : '');
   bindRows($('main'));
 }
@@ -267,7 +280,7 @@ function dutyCard(s) {
     ${s.items.map(it => {
       const who = it.people.length ? it.people.map(p => `${esc(p.name)}${p.role && p.role !== 'Pf' ? ` <span class="badge">${esc(p.role)}</span>` : ''}`).join(', ') : /^[xX×]$/.test(it.text.trim()) ? '<span style="color:var(--faint)">당직 없음</span>' : esc(it.text);
       const extra = it.people.length && it.text.replace(/\s/g, '') !== it.people.map(p => p.name).join('') && !/^[A-Z]{1,2}$/.test(it.text.trim()) ? `<div class="nt">${esc(it.text)}</div>` : '';
-      return `<div class="row"><div class="who"><div class="p">${who}</div><div class="w2">${esc((it.sub ? it.sub + ' · ' : '') + it.label)}</div>${extra}</div>
+      return `<div class="row"><div class="who"><div class="p">${who}${rowStar(dutyItemKey(s, it))}</div><div class="w2">${esc((it.sub ? it.sub + ' · ' : '') + it.label)}</div>${extra}</div>
         <div class="nums">${it.people.map(p => numsHtml(p.phone)).join('')}</div></div>`;
     }).join('')}
     ${s.notes.length ? `<details class="dnotes"><summary>call 순서 · 메모</summary>${s.notes.map(n => `<p>${esc(n).replace(NOTE_NUM, t => `<button class="badge" data-num="${t}">${t}</button>`)}</p>`).join('')}</details>` : ''}
@@ -324,7 +337,7 @@ function renderSettings() {
     <button class="btn block" id="imp">파일에서 불러오기</button></div>
   <div class="card"><h3>화면</h3><div class="seg" id="theme">
     ${[['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']].map(([k, l]) => `<button data-t="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div>
-    ${S.favs.size ? `<div class="kv"><span>즐겨찾기</span><b>${esc([...S.favs].join(', '))}</b></div><button class="btn block" id="clrFav">즐겨찾기 모두 지우기</button>` : '<p style="margin:0;color:var(--muted);font-size:13px">과 이름 옆 ☆를 누르면 즐겨찾기가 맨 위에 옵니다</p>'}</div>
+    ${S.favs.size ? `<div class="kv"><span>즐겨찾기</span><b>${S.favs.size}개</b></div><button class="btn block" id="clrFav">즐겨찾기 모두 지우기</button>` : '<p style="margin:0;color:var(--muted);font-size:13px">과 이름이나 항목 옆 ☆를 누르면 맨 위에 오고, ★ 별만으로 모아 볼 수 있습니다</p>'}</div>
   <div class="card"><h3>보안</h3><button class="btn block" id="lockNow">비밀번호 다시 입력하기</button></div>
   ${isAdmin() ? `<div class="card"><h3>관리자</h3><p style="margin:0;color:var(--muted);font-size:13px">새 달 근무표 등록, 부서 근무표 수정(엑셀·사진), 게시는 관리자만 할 수 있습니다.</p>
     <button class="btn primary block" id="adm">관리자 화면 열기</button>
