@@ -188,17 +188,18 @@ function newMonth() {
         }
       };
       $('nmAi').onclick = async () => { fix(); await review(draft, $('nmAiOut')); };
+      if (cfgA().apiKey) { $('nmAi').textContent = 'Claude로 메모 다시 검토'; fix(); review(draft, $('nmAiOut')); }   // 키가 있으면 자동 검토
       $('nmApply').onclick = () => { fix(); A.draft = draft; A.dirty = true; setData(clone(draft)); toast('미리보기로 바꿨습니다. 확인 후 게시하세요'); open(); };
     } catch (e) { busy(''); $('nm').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
   });
 }
-async function review(draft, out) {
-  const units = draft.units.map(u => ({ key: u.key, name: u.name, memo: u.memo.slice(0, 3000), current_rule: draft.cfg[ruleKey(u)] ?? null,
-    local_check: Engine.ruleCheck(u, draft.cfg), note: ['EYE', 'PS', 'REHAB', 'OS', 'DERM'].includes(ruleKey(u)) ? '교수-PA 짝은 메모에서 매번 자동으로 읽음(규칙 없음)' : '' }));
+async function review(draft, out, keys) {
+  const units = draft.units.filter(u => !keys || keys.includes(u.key)).map(u => ({ key: u.key, name: u.name, memo: u.memo.slice(0, 3000), current_rule: draft.cfg[ruleKey(u)] ?? null,
+    local_check: Engine.ruleCheck(u, draft.cfg), memo_changed_lines: (draft.memoChanged || {})[u.key] || null, note: ['EYE', 'PS', 'REHAB', 'OS', 'DERM'].includes(ruleKey(u)) ? '교수-PA 짝은 메모에서 매번 자동으로 읽음(규칙 없음)' : '' }));
   busy('Claude가 메모를 검토하는 중… (30초~1분)');
   try {
     const r = await claude({ system: DOMAIN, tool: REVIEW_TOOL, content: [{ type: 'text', text:
-      `${draft.Y}년 ${draft.M}월 근무표의 과별 번호 안내 메모와 현재 번호 규칙입니다. 메모가 규칙과 달라진 곳(번호 변경, 교수 추가·삭제·팀 이동, 시간대·인원별 규칙 변경, 새 예외)을 찾아 주세요.\n` +
+      `${draft.Y}년 ${draft.M}월 근무표의 과별 번호 안내 메모와 현재 번호 규칙입니다. 메모가 규칙과 달라진 곳(번호 변경, 교수 추가·삭제·팀 이동, 시간대·인원별 규칙 변경, 새 예외)을 찾아 주세요. memo_changed_lines는 지난 자료와 달라진 메모 줄입니다(있으면 특히 살펴 주세요).\n` +
       `규칙이 바뀌어야 하면 status=changed와 함께 그 과의 새 규칙 전체를 cfg로 주세요(키·구조는 현재와 동일). current_rule이 null인 과는 cfg 없이 summary만.\n\n` + JSON.stringify(units) }] });
     busy('');
     const list = (r.units || []).filter(x => x.status !== 'ok');
@@ -325,8 +326,16 @@ function showDeptDiff(ui, r, wholeUnit) {
     <div class="gridwrap"><table>${head}${body}</table></div>
     <button class="btn primary block" id="fxApply">이대로 반영 (게시 전 미리보기)</button></div>`;
   const fc = $('fxOut').querySelector('td.chg'); if (fc) fc.scrollIntoView({ block: 'nearest', inline: 'center' });
+  // 수정본 엑셀의 메모가 바뀌었으면 그 과만 Claude 검토(키가 있을 때). 적용한 규칙은 "이대로 반영" 때 함께 들어간다
+  const md = wholeUnit ? Engine.memoDiff([u], [nu]) : {};
+  let tmp = null;
+  if (md[u.key] && cfgA().apiKey) {
+    tmp = { ...d, cfg: clone(d.cfg), log: [], memoChanged: md, units: d.units.map((x, i) => i === ui ? nu : x) };
+    $('fxOut').insertAdjacentHTML('beforeend', '<div id="fxAi" class="diff" style="margin-top:8px"></div>'); review(tmp, $('fxAi'), [u.key]);
+  }
   $('fxApply').onclick = () => {
-    const md = Engine.memoDiff([u], [nu]); if (md[u.key]) d.memoChanged = { ...(d.memoChanged || {}), ...md };
+    if (md[u.key]) d.memoChanged = { ...(d.memoChanged || {}), ...md };
+    if (tmp?.log.length) { d.cfg[ruleKey(u)] = tmp.cfg[ruleKey(u)]; d.log = [...(d.log || []), ...tmp.log]; }
     d.units[ui] = nu;
     if (r.cfg && $('fxCfg')?.checked && sameShape(d.cfg[ruleKey(u)], r.cfg)) d.cfg[ruleKey(u)] = r.cfg;
     if (r.memo_changes && !wholeUnit) { d.manualWarn = d.manualWarn || {}; d.manualWarn[u.key] = `수정본 메모 변경: ${r.memo_changes}`; }
