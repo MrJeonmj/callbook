@@ -145,11 +145,14 @@ function render() {
   document.querySelector('.search').hidden = S.tab === 'set';
   $('chips').hidden = S.tab !== 'home' && S.tab !== 'duty';
   document.querySelector('.shifts').hidden = S.tab === 'duty';
+  $('q').placeholder = SEARCH_HINT[S.tab] || '';
   $('qClear').hidden = !S.q;
   document.querySelectorAll('#tabs button').forEach(b => b.dataset.tab === S.tab ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
   if (S.tab === 'home') renderHome(); else if (S.tab === 'prof') renderProf(); else if (S.tab === 'duty') renderDuty(); else renderSettings();
 }
 
+// 탭마다 실제로 찾는 범위가 다르다 (근무표: 간호사·번호까지 / 교수 찾기: 교수·과 / 당직: 교수·과·번호)
+const SEARCH_HINT = { home: '교수 · 과 · 간호사 · 번호 검색', prof: '교수 · 과 검색', duty: '당직 교수 · 과 · 번호 검색' };
 function visibleRows() {
   const all = S.byDay.get(S.day) || [];
   const q = S.q.trim().toLowerCase();
