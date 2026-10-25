@@ -360,7 +360,7 @@ async function publish() {
   openSheet(`<div class="admin stack"><h3>게시</h3>${busyHtml}<div id="pbOut"></div>${back()}</div>`); bindBack();
   busy('암호화 중…');
   try {
-    const blob = await sealed(); const body = JSON.stringify(blob);
+    A.draft.updatedAt = now(); const blob = await sealed(); const body = JSON.stringify(blob);
     const url = `https://api.github.com/repos/${g.owner}/${g.repo}/contents/${g.path}`;
     busy('GitHub에 올리는 중…');
     let sha; const cur = await fetch(url + '?ref=' + encodeURIComponent(g.branch), { headers: ghHeaders(g.token) });

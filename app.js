@@ -60,13 +60,15 @@ async function fetchBlob() {
 /* 관리자 메뉴는 관리자 기기에서만 보인다: 주소 끝에 #admin으로 한 번 열면 그 기기에 기억 */
 if (location.hash === '#admin') { LS.set('adminMode', true); history.replaceState(null, '', location.pathname + location.search); }
 const isAdmin = () => !!LS.get('adminMode');
+/* 같은 게시본인지: 다시 암호화하면 iv가 바뀌므로 비밀번호만 바꿔 게시해도 새 파일로 인식 */
+const sameBlob = (a, b) => !!(a && b && a.iv === b.iv && a.updatedAt === b.updatedAt);
 async function boot() {
   applyTheme();
   $('adminFromLock').hidden = !isAdmin();
   lastSync = Date.now(); const remote = await fetchBlob();
   const local = LS.get('blob');
   let blob = local;
-  if (remote && (!local || remote.updatedAt !== local.updatedAt)) { blob = remote; LS.set('blob', remote); }
+  if (remote && !sameBlob(remote, local)) { blob = remote; LS.set('blob', remote); }
   if (!blob) return showLock('아직 게시된 근무표가 없습니다');
   const pw = LS.get('pw');
   if (!pw) return showLock();
@@ -79,7 +81,7 @@ async function syncRemote(manual) {
   if (window.Admin && (Admin.dirty || Admin.busy)) return manual && toast('게시 안 한 관리자 변경이 있어 받지 않았습니다');
   lastSync = Date.now();
   const r = await fetchBlob(); if (!r) return manual && toast('서버에서 받지 못했습니다');
-  const cur = LS.get('blob'); if (cur && cur.updatedAt === r.updatedAt) return manual && toast('이미 최신입니다');
+  const cur = LS.get('blob'); if (sameBlob(cur, r)) return manual && toast('이미 최신입니다');
   LS.set('blob', r);
   try { setData(await Crypt.open(r, LS.get('pw'))); toast(`${r.month} 근무표를 새로 받았습니다`); } catch { showLock('새 근무표의 비밀번호를 입력하세요'); }
 }
