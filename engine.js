@@ -558,8 +558,11 @@ const H = {
     const c = cfg.GSW, has = h.nurses.some(n => n.codes.some(Boolean));
     const w = has ? '근무표 입력됨 - 규칙 미등록' : '(이번 달 근무표 미입력)', wn = has ? '외과 병동 근무표가 새로 입력됨 → 팀 표기 규칙 확인 필요' : '';
     for (const d of cx.days) {
-      for (const t of 'DE') c.teams.forEach(([team, profs, num], ti) => profs.forEach((p, pi) => h.add(d, team, p, SHN[t], num, w, 'Part call · 병동 전담은 ER call 안 받음', wn, [ti, pi])));
-      h.add(d, 'N duty', '교수 구분 없음', 'Night', c.night, w, 'Night는 팀 구분 없이 N duty', wn, [99, 0]);
+      // 교수마다 Night 줄도 만든다(교수 찾기·이름 검색에서 Night 번호가 보이도록)
+      c.teams.forEach(([team, profs, num], ti) => profs.forEach((p, pi) => {
+        for (const t of 'DE') h.add(d, team, p, SHN[t], num, w, 'Part call · 병동 전담은 ER call 안 받음', wn, [ti, pi]);
+        h.add(d, team, p, 'Night', c.night, w, 'Night는 팀 구분 없이 N duty', wn, [ti, pi]);
+      }));
     }
   },
   ENT(cx, h, cfg) {
@@ -749,10 +752,21 @@ function dutyFor(duty, d) {
 // 부서 하나 교체·비교용
 function dutyToGrid(sec, nDays) { return sec.rows.map(x => [(x.sub ? x.sub + ' / ' : '') + x.label, ...Array.from({ length: nDays }, (_, k) => x.cells[k] || '')]); }
 
+/* 메모(번호 안내 글)를 지난 자료와 줄 단위로 비교 → 바뀐 과만 { key: { name, added, removed } } */
+const memoLines = m => String(m || '').split(' ¦ ').map(clean).filter(Boolean);
+function memoDiff(prevUnits, units) {
+  const out = {};
+  for (const u of units) { const o = (prevUnits || []).find(x => x.key === u.key); if (!o) continue;
+    const a = memoLines(o.memo), b = memoLines(u.memo);
+    const added = b.filter(x => !a.includes(x)), removed = a.filter(x => !b.includes(x));
+    if (added.length || removed.length) out[u.key] = { name: u.name, added, removed };
+  }
+  return out;
+}
 function unitToGrid(u, nDays) {
   const head = ['이름', '정보', ...Array.from({ length: nDays }, (_, i) => String(i + 1))];
   return [head, ...u.nurses.map(n => [n.name, clean(n.info), ...n.codes.map((c, i) => c + (n.marks?.[i] === 'Y' ? '#노랑' : n.marks?.[i] === 'B' ? '#파랑' : ''))])];
 }
 
-G.Engine = { readXlsx, extractBook, extractDuty, dutyFor, dutyPeople, dutyToGrid, compute, ruleCheck, mergeRevised, setDefaultCfg, get DEFAULT_CFG() { return DEFAULT_CFG; }, UNK, WD, jsWd, unitToGrid, clean };
+G.Engine = { readXlsx, extractBook, memoDiff, memoLines, extractDuty, dutyFor, dutyPeople, dutyToGrid, compute, ruleCheck, mergeRevised, setDefaultCfg, get DEFAULT_CFG() { return DEFAULT_CFG; }, UNK, WD, jsWd, unitToGrid, clean };
 })(typeof window !== 'undefined' ? window : globalThis);

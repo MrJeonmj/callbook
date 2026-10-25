@@ -78,6 +78,7 @@ function open() {
     <button class="btn brand block" id="aNew">새 달 근무표 올리기 (엑셀)</button>
     <button class="btn block" id="aFix" ${A.draft ? '' : 'disabled'}>부서 근무표 수정 (엑셀·사진)</button>
     <button class="btn block" id="aRule" ${A.draft ? '' : 'disabled'}>번호 규칙 보기·수정</button>
+    ${Object.keys(A.draft?.memoChanged || {}).length ? `<button class="btn block" id="aMemo">메모 바뀐 과 ${Object.keys(A.draft.memoChanged).length}곳 보기</button>` : ''}
     <h4>당직표</h4>
     <button class="btn brand block" id="aDutyNew" ${A.draft ? '' : 'disabled'}>새 달 당직표 올리기 (엑셀)</button>
     <button class="btn block" id="aDutyFix" ${A.draft?.duty ? '' : 'disabled'}>부서 당직표 수정 (엑셀·사진)</button>
@@ -92,6 +93,7 @@ function open() {
     <button class="btn block" id="aClose" style="background:none;border:0;color:var(--muted)">닫기</button></div>`);
   $('aNew').onclick = newMonth; $('aFix').onclick = fixDept; $('aRule').onclick = rules;
   $('aDutyNew').onclick = dutyNew; $('aDutyFix').onclick = dutyFix;
+  $('aMemo') && ($('aMemo').onclick = memoView);
   $('aPub').onclick = publish; $('aExp').onclick = exportBlob; $('aXlsx').onclick = exportXlsx;
   $('aLog').onclick = showLog; $('aSet').onclick = settings; $('aClose').onclick = closeSheet;
   $('aDiscard') && ($('aDiscard').onclick = () => { A.draft = App.S.data ? clone(App.S.data) : null; A.dirty = false; toast('변경을 버렸습니다'); open(); });
@@ -163,6 +165,7 @@ function newMonth() {
       const ex = Engine.extractBook(book, f.name);
       const base = A.draft || App.S.data;
       const draft = { ...ex, cfg: clone(base?.cfg || Engine.DEFAULT_CFG), ...(base?.duty ? { duty: clone(base.duty) } : {}), updatedAt: now(), log: [...(base?.log || []).slice(-40), { at: now(), what: `${ex.Y}년 ${ex.M}월 근무표 등록 (${f.name})` }] };
+      draft.memoChanged = Engine.memoDiff(base?.units, ex.units);
       const res = Engine.compute(draft);
       busy('');
       let html = `<div class="card" style="box-shadow:none;border:1px solid var(--line)"><div class="kv">
@@ -173,6 +176,7 @@ function newMonth() {
         <label class="field">연월이 틀리면 고치기<input id="nmYm" value="${ex.Y}-${String(ex.M).padStart(2, '0')}"></label>
         <label class="field">휴일(일자, 쉼표)<input id="nmHol" value="${ex.holidays.join(',')}"></label></div>`;
       html += res.changed.length ? `<div class="banner">메모와 번호 규칙이 다른 과 ${res.changed.length}곳: ${esc(res.changed.map(c => c.name).join(', '))}</div>` : '<div class="banner" style="background:var(--accent-soft);color:var(--accent)">메모의 번호·교수 이름이 기존 규칙과 모두 일치합니다. 팀 이동 같은 변화는 Claude 검토로 확인하세요.</div>';
+      html += memoDiffHtml(draft.memoChanged);
       html += `<button class="btn primary block" id="nmAi">Claude로 메모 전체 검토</button><div id="nmAiOut" class="diff"></div>
         <button class="btn block" id="nmApply">이 근무표로 미리보기 (게시 전)</button>`;
       $('nm').innerHTML = html;
@@ -180,7 +184,7 @@ function newMonth() {
         const [y, m] = $('nmYm').value.split('-').map(Number);
         const hol = $('nmHol').value.split(/[,\s]+/).map(Number).filter(Boolean);
         if (y !== draft.Y || m !== draft.M || hol.join() !== draft.holidays.join()) {
-          const ex2 = Engine.extractBook(book, f.name, { ym: [y, m], holidays: hol }); Object.assign(draft, ex2, { cfg: draft.cfg, duty: draft.duty, updatedAt: draft.updatedAt, log: draft.log });
+          const ex2 = Engine.extractBook(book, f.name, { ym: [y, m], holidays: hol }); Object.assign(draft, ex2, { cfg: draft.cfg, duty: draft.duty, memoChanged: draft.memoChanged, updatedAt: draft.updatedAt, log: draft.log });
         }
       };
       $('nmAi').onclick = async () => { fix(); await review(draft, $('nmAiOut')); };
@@ -322,6 +326,7 @@ function showDeptDiff(ui, r, wholeUnit) {
     <button class="btn primary block" id="fxApply">이대로 반영 (게시 전 미리보기)</button></div>`;
   const fc = $('fxOut').querySelector('td.chg'); if (fc) fc.scrollIntoView({ block: 'nearest', inline: 'center' });
   $('fxApply').onclick = () => {
+    const md = Engine.memoDiff([u], [nu]); if (md[u.key]) d.memoChanged = { ...(d.memoChanged || {}), ...md };
     d.units[ui] = nu;
     if (r.cfg && $('fxCfg')?.checked && sameShape(d.cfg[ruleKey(u)], r.cfg)) d.cfg[ruleKey(u)] = r.cfg;
     if (r.memo_changes && !wholeUnit) { d.manualWarn = d.manualWarn || {}; d.manualWarn[u.key] = `수정본 메모 변경: ${r.memo_changes}`; }
@@ -352,6 +357,19 @@ function rules() {
     d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${k} 번호 규칙 직접 수정` }];
     A.dirty = true; setData(clone(d)); toast('저장했습니다'); open();
   };
+}
+
+/* ------------------------------------------------------------ 메모 변경 (지난 자료와 다른 문구) */
+function memoDiffHtml(mc) {
+  const ks = Object.keys(mc || {});
+  if (!ks.length) return '';
+  return `<div class="banner">메모가 지난 자료와 바뀐 과 ${ks.length}곳 — 비고·번호 규칙을 고쳐야 하는지 확인하세요</div><div class="diff">${ks.map(k => `<div class="diffItem"><b>${esc(mc[k].name)}</b>
+    ${mc[k].added.map(t => `<div class="wt" style="color:var(--ok)">+ ${esc(t)}</div>`).join('')}${mc[k].removed.map(t => `<div class="wt" style="color:var(--bad)">− ${esc(t)}</div>`).join('')}</div>`).join('')}</div>`;
+}
+function memoView() {
+  openSheet(`<div class="admin stack"><h3>메모 바뀐 과</h3>${memoDiffHtml(A.draft.memoChanged)}
+    <button class="btn block" id="mvClear">확인 완료 (표시 지우기)</button>${back()}</div>`); bindBack();
+  $('mvClear').onclick = () => { const d = A.draft; d.memoChanged = {}; d.updatedAt = now(); A.dirty = true; setData(clone(d)); toast('표시를 지웠습니다 · 게시하면 사용자 화면에서도 사라집니다'); open(); };
 }
 
 /* ------------------------------------------------------------ 당직표 (교수 당직) — 근무표와 따로 올리고 고친다 */

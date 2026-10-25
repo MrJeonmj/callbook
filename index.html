@@ -356,6 +356,10 @@ nav.tabs button[aria-current="page"] { color: #fff; background: var(--brand-grad
 .dnotes[open] summary::after { content: " ▴" }
 .dnotes p { margin: 6px 0 0; overflow-wrap: anywhere; line-height: 1.55 }
 .dnotes .badge { font-family: var(--fn); font-size: 12px; color: var(--ink) }
+.mchg { font-size: 11px; font-weight: 800; color: var(--warn); background: var(--warn-soft); border: 1px solid var(--day-bdr); border-radius: 999px; padding: 0 7px; margin-left: 4px }
+.dnotes p.madd { background: var(--warn-soft); border-radius: 6px; padding: 2px 6px; margin-left: -6px; margin-right: -6px; color: var(--ink) }
+.dnotes p.madd::before { content: "새 문구 · "; font-weight: 800; color: var(--warn) }
+.dnotes p.mdel { color: var(--faint) }
 .dutyOff { text-align: center; color: var(--faint); font-size: 12px; margin: 4px 0 0 }
 </style>
 </head>

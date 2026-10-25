@@ -189,7 +189,16 @@ function deptCard(dept, rs, showShift) {
       <button class="star" data-fav="${esc(dept)}" aria-pressed="${S.favs.has(dept)}" aria-label="즐겨찾기"><svg width="20" height="20" viewBox="0 0 24 24" fill="${S.favs.has(dept) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg></button></header>
     ${shown.map(r => rowHtml(r, showShift)).join('')}
     ${rs.length > shown.length ? `<button class="more" data-more="${esc(dept)}">${rs.length - shown.length}명 더 보기</button>` : ''}
+    ${memoHtml(rs[0]?.unit)}
   </section>`;
+}
+// 과 카드 아래: 원본 메모(번호 안내 글) 그대로. 지난 자료와 달라진 줄은 표시
+function memoHtml(key) {
+  const u = S.data.units.find(x => x.key === key); if (!u) return '';
+  const lines = Engine.memoLines(u.memo); if (!lines.length) return '';
+  const ch = (S.data.memoChanged || {})[key], add = new Set(ch?.added || []);
+  const num = t => esc(t).replace(NOTE_NUM, n => `<button class="badge" data-num="${n}">${n}</button>`);
+  return `<details class="dnotes"><summary>메모 원문${ch ? ' <span class="mchg">지난 자료와 바뀜</span>' : ''}</summary>${lines.map(t => `<p class="${add.has(t) ? 'madd' : ''}">${num(t)}</p>`).join('')}${ch?.removed.length ? `<p class="mdel">빠진 문구: ${ch.removed.map(t => `<s>${esc(t)}</s>`).join(' / ')}</p>` : ''}</details>`;
 }
 function rowHtml(r, showShift) {
   const generic = GENERIC.has(r.prof);
