@@ -143,10 +143,11 @@ function render() {
   $('meta').innerHTML = `<span class="dot ${stale ? 'stale' : ''}"></span>${d.Y}.${String(d.M).padStart(2, '0')}${upd ? ` · ${upd.getMonth() + 1}/${upd.getDate()} ${String(upd.getHours()).padStart(2, '0')}:${String(upd.getMinutes()).padStart(2, '0')} 갱신` : ''}`;
   $('dateBar').hidden = S.tab === 'set';
   document.querySelector('.search').hidden = S.tab === 'set';
-  $('chips').hidden = S.tab !== 'home';
+  $('chips').hidden = S.tab !== 'home' && S.tab !== 'duty';
+  document.querySelector('.shifts').hidden = S.tab === 'duty';
   $('qClear').hidden = !S.q;
   document.querySelectorAll('#tabs button').forEach(b => b.dataset.tab === S.tab ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
-  if (S.tab === 'home') renderHome(); else if (S.tab === 'prof') renderProf(); else renderSettings();
+  if (S.tab === 'home') renderHome(); else if (S.tab === 'prof') renderProf(); else if (S.tab === 'duty') renderDuty(); else renderSettings();
 }
 
 function visibleRows() {
@@ -226,6 +227,39 @@ function numAction(t) {
   if (!t.startsWith('010')) return copy(t);
   openSheet(`<h3>${esc(t)}</h3><div class="stack"><a class="btn primary block" style="text-align:center;text-decoration:none" href="tel:${t.replace(/-/g, '')}">전화 걸기</a><button class="btn block" id="cp">번호 복사</button></div>`);
   $('cp').onclick = () => { copy(t); closeSheet(); };
+}
+
+/* ------------------------------------------------------------ 당직 (교수 당직표) */
+function renderDuty() {
+  const du = S.data.duty;
+  if (!du) { $('chips').innerHTML = ''; $('main').innerHTML = `<div class="empty"><b>아직 당직표가 없습니다</b>관리자가 올리면 여기에 보입니다</div>`; return; }
+  const same = du.Y === S.data.Y && du.M === S.data.M;
+  const all = Engine.dutyFor(du, Math.min(S.day, du.nDays)), q = S.q.trim().replace(/\s/g, '');
+  const hit = it => (it.label + it.text + it.people.map(p => p.name + p.phone).join()).replace(/\s/g, '').includes(q);
+  let secs = all.filter(s => s.items.length).map(s => q && !s.name.includes(q) ? { ...s, items: s.items.filter(hit) } : s).filter(s => s.items.length);
+  secs.sort((a, b) => S.favs.has('당직:' + b.name) - S.favs.has('당직:' + a.name));
+  const off = all.filter(s => !s.filled).map(s => s.name);
+  $('chips').innerHTML = secs.map(s => `<button class="chip ${S.favs.has('당직:' + s.name) ? 'fav' : ''}" data-go="duty-${esc(s.name)}">${S.favs.has('당직:' + s.name) ? '★ ' : ''}${esc(s.name)}</button>`).join('');
+  $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById(b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  const banner = same ? '' : `<div class="banner">당직표는 ${du.Y}년 ${du.M}월입니다 (근무표 ${S.data.Y}년 ${S.data.M}월)</div>`;
+  if (!secs.length) { $('main').innerHTML = banner + `<div class="empty"><b>${q ? '찾는 결과가 없습니다' : '이 날 당직표가 없습니다'}</b></div>`; return; }
+  $('main').innerHTML = banner + secs.map(dutyCard).join('') + (off.length && !q ? `<p class="dutyOff">당직표 미입력 · ${esc(off.join(', '))}</p>` : '');
+  bindRows($('main'));
+}
+const NOTE_NUM = /0\d{1,2}[- ]\d{3,4}[- ]\d{4}|\b86-?\d{4}\b|(?<![\d.])\d{4,6}(?![\d.년월])/g; // 메모 속 번호 (연도 2024. 등 제외)
+function dutyCard(s) {
+  const fav = S.favs.has('당직:' + s.name);
+  return `<section class="dept" id="duty-${esc(s.name)}">
+    <header><h2>${esc(s.name)}</h2>${s.chief ? `<span class="badge">과장 ${esc(s.chief)}</span>` : ''}
+      <button class="star" data-fav="당직:${esc(s.name)}" aria-pressed="${fav}" aria-label="즐겨찾기"><svg width="20" height="20" viewBox="0 0 24 24" fill="${fav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg></button></header>
+    ${s.items.map(it => {
+      const who = it.people.length ? it.people.map(p => `${esc(p.name)}${p.role && p.role !== 'Pf' ? ` <span class="badge">${esc(p.role)}</span>` : ''}`).join(', ') : /^[xX×]$/.test(it.text.trim()) ? '<span style="color:var(--faint)">당직 없음</span>' : esc(it.text);
+      const extra = it.people.length && it.text.replace(/\s/g, '') !== it.people.map(p => p.name).join('') && !/^[A-Z]{1,2}$/.test(it.text.trim()) ? `<div class="nt">${esc(it.text)}</div>` : '';
+      return `<div class="row"><div class="who"><div class="p">${who}</div><div class="w2">${esc((it.sub ? it.sub + ' · ' : '') + it.label)}</div>${extra}</div>
+        <div class="nums">${it.people.map(p => numsHtml(p.phone)).join('')}</div></div>`;
+    }).join('')}
+    ${s.notes.length ? `<details class="dnotes"><summary>call 순서 · 메모</summary>${s.notes.map(n => `<p>${esc(n).replace(NOTE_NUM, t => `<button class="badge" data-num="${t}">${t}</button>`)}</p>`).join('')}</details>` : ''}
+  </section>`;
 }
 
 /* ------------------------------------------------------------ 교수 찾기 */

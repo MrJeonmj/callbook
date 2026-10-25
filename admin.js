@@ -78,6 +78,9 @@ function open() {
     <button class="btn brand block" id="aNew">새 달 근무표 올리기 (엑셀)</button>
     <button class="btn block" id="aFix" ${A.draft ? '' : 'disabled'}>부서 근무표 수정 (엑셀·사진)</button>
     <button class="btn block" id="aRule" ${A.draft ? '' : 'disabled'}>번호 규칙 보기·수정</button>
+    <h4>당직표</h4>
+    <button class="btn brand block" id="aDutyNew" ${A.draft ? '' : 'disabled'}>새 달 당직표 올리기 (엑셀)</button>
+    <button class="btn block" id="aDutyFix" ${A.draft?.duty ? '' : 'disabled'}>부서 당직표 수정 (엑셀·사진)</button>
     <h4>게시</h4>
     <button class="btn primary block" id="aPub" ${A.draft ? '' : 'disabled'}>모두에게 게시 (GitHub)</button>
     <button class="btn block" id="aExp" ${A.draft ? '' : 'disabled'}>데이터 파일로 내보내기 (메신저 공유용)</button>
@@ -88,6 +91,7 @@ function open() {
     ${A.dirty ? '<button class="btn block danger" id="aDiscard">게시 안 한 변경 버리기</button>' : ''}
     <button class="btn block" id="aClose" style="background:none;border:0;color:var(--muted)">닫기</button></div>`);
   $('aNew').onclick = newMonth; $('aFix').onclick = fixDept; $('aRule').onclick = rules;
+  $('aDutyNew').onclick = dutyNew; $('aDutyFix').onclick = dutyFix;
   $('aPub').onclick = publish; $('aExp').onclick = exportBlob; $('aXlsx').onclick = exportXlsx;
   $('aLog').onclick = showLog; $('aSet').onclick = settings; $('aClose').onclick = closeSheet;
   $('aDiscard') && ($('aDiscard').onclick = () => { A.draft = App.S.data ? clone(App.S.data) : null; A.dirty = false; toast('변경을 버렸습니다'); open(); });
@@ -158,7 +162,7 @@ function newMonth() {
       const book = await Engine.readXlsx(await f.arrayBuffer());
       const ex = Engine.extractBook(book, f.name);
       const base = A.draft || App.S.data;
-      const draft = { ...ex, cfg: clone(base?.cfg || Engine.DEFAULT_CFG), updatedAt: now(), log: [...(base?.log || []).slice(-40), { at: now(), what: `${ex.Y}년 ${ex.M}월 근무표 등록 (${f.name})` }] };
+      const draft = { ...ex, cfg: clone(base?.cfg || Engine.DEFAULT_CFG), ...(base?.duty ? { duty: clone(base.duty) } : {}), updatedAt: now(), log: [...(base?.log || []).slice(-40), { at: now(), what: `${ex.Y}년 ${ex.M}월 근무표 등록 (${f.name})` }] };
       const res = Engine.compute(draft);
       busy('');
       let html = `<div class="card" style="box-shadow:none;border:1px solid var(--line)"><div class="kv">
@@ -176,7 +180,7 @@ function newMonth() {
         const [y, m] = $('nmYm').value.split('-').map(Number);
         const hol = $('nmHol').value.split(/[,\s]+/).map(Number).filter(Boolean);
         if (y !== draft.Y || m !== draft.M || hol.join() !== draft.holidays.join()) {
-          const ex2 = Engine.extractBook(book, f.name, { ym: [y, m], holidays: hol }); Object.assign(draft, ex2, { cfg: draft.cfg, updatedAt: draft.updatedAt, log: draft.log });
+          const ex2 = Engine.extractBook(book, f.name, { ym: [y, m], holidays: hol }); Object.assign(draft, ex2, { cfg: draft.cfg, duty: draft.duty, updatedAt: draft.updatedAt, log: draft.log });
         }
       };
       $('nmAi').onclick = async () => { fix(); await review(draft, $('nmAiOut')); };
@@ -347,6 +351,99 @@ function rules() {
     if (u) { if ($('rw').value.trim()) d.manualWarn[u.key] = $('rw').value.trim(); else delete d.manualWarn[u.key]; }
     d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${k} 번호 규칙 직접 수정` }];
     A.dirty = true; setData(clone(d)); toast('저장했습니다'); open();
+  };
+}
+
+/* ------------------------------------------------------------ 당직표 (교수 당직) — 근무표와 따로 올리고 고친다 */
+const DUTY_TOOL = {
+  name: 'report_duty_section', description: '사진에서 읽은 한 과의 당직표',
+  input_schema: { type: 'object', properties: {
+    rows: { type: 'array', items: { type: 'object', properties: {
+      label: { type: 'string', description: '당직 줄 이름(시간대·구분). 기존 줄과 같으면 표기를 똑같이' },
+      cells: { type: 'array', items: { type: ['string', 'null'] }, description: '1일~말일 칸 내용(교수 이름·코드 원문 그대로). 사진에 없거나 못 읽은 날은 null' } }, required: ['label', 'cells'] } },
+    contacts_changed: { type: 'string', description: '연락처·call 순서 메모가 기존과 달라졌으면 내용, 아니면 빈 문자열' },
+    notes: { type: 'string', description: '읽기 어려웠던 칸 등 관리자에게 알릴 점' } }, required: ['rows'] },
+};
+function dutyNew() {
+  pickFile('.xlsx', async f => {
+    openSheet(`<div class="admin stack"><h3>새 달 당직표</h3><p class="sub">${esc(f.name)}</p>${busyHtml}<div id="dn"></div>${back()}</div>`); bindBack();
+    busy('엑셀 읽는 중…');
+    try {
+      const book = await Engine.readXlsx(await f.arrayBuffer());
+      const du = Engine.extractDuty(book, f.name), d = A.draft;
+      const on = du.sections.filter(s => s.rows.some(x => x.cells.some(Boolean))), off = du.sections.filter(s => !on.includes(s));
+      busy('');
+      $('dn').innerHTML = `<div class="card" style="box-shadow:none;border:1px solid var(--line)"><div class="kv">
+        <span>기간</span><b>${du.Y}년 ${du.M}월 (${du.nDays}일)</b><span>입력된 과</span><b>${on.length}개</b>
+        <span>미입력</span><b>${esc(off.map(s => s.name).join(', ') || '없음')}</b><span>연락처</span><b>${du.sections.reduce((n, s) => n + s.contacts.length, 0)}명</b></div>
+        ${du.issues.map(t => `<div class="wt" style="color:var(--warn);font-size:13px">⚠ ${esc(t)}</div>`).join('')}
+        ${d && (d.Y !== du.Y || d.M !== du.M) ? `<div class="wt" style="color:var(--warn);font-size:13px">⚠ 근무표는 ${d.Y}년 ${d.M}월입니다. 당직 탭은 근무표와 같은 달일 때 날짜가 맞습니다.</div>` : ''}</div>
+        <button class="btn primary block" id="dnApply">이 당직표로 미리보기 (게시 전)</button>`;
+      $('dnApply').onclick = () => {
+        d.duty = du; d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${du.Y}년 ${du.M}월 당직표 등록 (${f.name})` }];
+        A.dirty = true; setData(clone(d)); toast('미리보기로 바꿨습니다. 확인 후 게시하세요'); open();
+      };
+    } catch (e) { busy(''); $('dn').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
+  });
+}
+function dutyFix() {
+  const du = A.draft.duty;
+  openSheet(`<div class="admin stack"><h3>부서 당직표 수정</h3><p class="sub">수정된 당직표를 엑셀이나 사진으로 올리면 그 과만 바꿉니다</p>
+    <label class="field">과<select id="dfS">${du.sections.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join('')}</select></label>
+    <button class="btn primary block" id="dfPhoto">사진으로 (여러 장 가능)</button>
+    <button class="btn block" id="dfXlsx">엑셀로</button>${busyHtml}<div id="dfOut"></div>${back()}</div>`);
+  bindBack();
+  $('dfPhoto').onclick = () => pickFile('image/*', fs => dutyFromImages(+$('dfS').value, fs), true);
+  $('dfXlsx').onclick = () => pickFile('.xlsx', f => dutyFromXlsx(+$('dfS').value, f));
+}
+async function dutyFromXlsx(si, f) {
+  const du = A.draft.duty, s = du.sections[si];
+  busy('엑셀 읽는 중…');
+  try {
+    const ex = Engine.extractDuty(await Engine.readXlsx(await f.arrayBuffer()), f.name, { ym: [du.Y, du.M], holidays: du.holidays });
+    const n = ex.sections.find(x => x.key === s.key) || (ex.sections.length === 1 ? ex.sections[0] : null);
+    if (!n) throw new Error(`엑셀에서 "${s.name} 당직표"를 찾지 못했습니다`);
+    // 수정본에 연락처·메모가 없으면 기존 것 유지
+    const ns = { ...n, key: s.key, name: s.name, contacts: n.contacts.length ? n.contacts : s.contacts, notes: n.notes.length ? n.notes : s.notes, chief: n.chief || s.chief };
+    busy(''); showDutyDiff(si, ns, n.contacts.length ? '' : '수정본에 연락처가 없어 기존 연락처 유지');
+  } catch (e) { busy(''); $('dfOut').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
+}
+async function dutyFromImages(si, files) {
+  const du = A.draft.duty, s = du.sections[si];
+  busy(`사진 ${files.length}장 준비 중…`);
+  try {
+    const imgs = []; for (const f of files) imgs.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: await shrink(f) } });
+    busy('Claude가 사진을 읽는 중… (1분 정도)');
+    const grid = Engine.dutyToGrid(s, du.nDays).map(r => r.join('\t')).join('\n');
+    const r = await claude({ system: DOMAIN, tool: DUTY_TOOL, content: [...imgs, { type: 'text', text:
+      `${du.Y}년 ${du.M}월(${du.nDays}일) "${s.name}" 교수 당직표가 수정되었습니다. 첨부 사진에서 이 과의 당직표를 읽어 주세요.\n` +
+      `cells는 길이 ${du.nDays}의 배열(1일~${du.nDays}일). 칸에 적힌 이름·코드를 원문 그대로, 사진에 없는 날은 null.\n` +
+      `[현재 저장된 당직표 (줄 이름 탭 1일…)]\n${grid}\n\n[연락처]\n${s.contacts.map(c => `${c.code ? c.code + ' ' : ''}${c.role ? c.role + ' ' : ''}${c.name}`).join(', ')}` }] });
+    const ns = clone(s);
+    for (const row of r.rows || []) {
+      let t = ns.rows.find(x => x.label.replace(/\s/g, '') === String(row.label).replace(/\s/g, ''));
+      if (!t) { t = { sub: '', label: row.label, cells: Array(du.nDays).fill('') }; ns.rows.push(t); }
+      (row.cells || []).forEach((c, k) => { if (c != null && k < du.nDays) t.cells[k] = String(c).trim(); });
+    }
+    busy(''); showDutyDiff(si, ns, [r.contacts_changed && `연락처·메모 변경: ${r.contacts_changed}`, r.notes].filter(Boolean).join(' · '));
+  } catch (e) { busy(''); $('dfOut').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
+}
+function showDutyDiff(si, ns, msg) {
+  const du = A.draft.duty, s = du.sections[si];
+  let changes = 0;
+  const head = `<tr><th>줄</th>${Array.from({ length: du.nDays }, (_, i) => `<th>${i + 1}</th>`).join('')}</tr>`;
+  const body = ns.rows.map(x => {
+    const o = s.rows.find(y => y.label === x.label && y.sub === x.sub);
+    return `<tr><td class="nm">${esc((x.sub ? x.sub + ' / ' : '') + x.label)}</td>${x.cells.map((c, k) => { const ch = (o?.cells[k] || '') !== c; if (ch) changes++; return `<td class="${ch ? 'chg' : ''}">${esc(c)}</td>`; }).join('')}</tr>`;
+  }).join('');
+  $('dfOut').innerHTML = `<div class="stack"><div class="kv"><span>바뀐 칸</span><b>${changes}칸</b></div>
+    ${msg ? `<div class="wt" style="color:var(--muted)">${esc(msg)}</div>` : ''}
+    <div class="gridwrap"><table>${head}${body}</table></div>
+    <button class="btn primary block" id="dfApply">이대로 반영 (게시 전 미리보기)</button></div>`;
+  const fc = $('dfOut').querySelector('td.chg'); if (fc) fc.scrollIntoView({ block: 'nearest', inline: 'center' });
+  $('dfApply').onclick = () => {
+    const d = A.draft; d.duty.sections[si] = ns; d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${s.name} 당직표 수정 (${changes}칸)` }];
+    A.dirty = true; setData(clone(d)); toast(`${s.name} 당직표 반영 · 게시해야 다른 사람에게 보입니다`); open();
   };
 }
 

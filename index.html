@@ -134,7 +134,7 @@ main { padding-block: 14px 110px; display: grid; gap: 12px }
 .pitem span { font-size: 12px; color: var(--faint); text-align: right; font-weight: 600 }
 
 /* ---------- 하단 탭 (분석 지도 / 대시보드 탭 느낌) */
-nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; background: var(--surface); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 6px max(10px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); box-shadow: 0 -2px 12px rgba(0,0,0,.04) }
+nav.tabs { grid-template-columns: repeat(4, 1fr) !important; position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; background: var(--surface); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 6px max(10px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); box-shadow: 0 -2px 12px rgba(0,0,0,.04) }
 nav.tabs button { border: 1px solid transparent; background: none; border-radius: 8px; padding: 6px 0 5px; display: grid; justify-items: center; gap: 1px; font-size: 11.5px; color: var(--faint); font-weight: 700 }
 nav.tabs button svg { width: 22px; height: 22px }
 nav.tabs button[aria-current="page"] { color: var(--accent); background: var(--accent-soft); border-color: rgba(217,119,6,.25) }
@@ -348,6 +348,15 @@ nav.tabs button[aria-current="page"] { color: #fff; background: var(--brand-grad
 .cal button.today::after { background: var(--ewha-yg) }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tab-bg: rgba(22,34,29,.86) } }
 :root[data-theme="dark"] { --tab-bg: rgba(22,34,29,.86) }
+/* 당직 탭 */
+.dnotes { border-top: 1px solid var(--line); padding: 10px 16px 12px; font-size: 12.5px; color: var(--muted) }
+.dnotes summary { cursor: pointer; font-weight: 700; color: var(--faint); list-style: none }
+.dnotes summary::-webkit-details-marker { display: none }
+.dnotes summary::after { content: " ▾" }
+.dnotes[open] summary::after { content: " ▴" }
+.dnotes p { margin: 6px 0 0; overflow-wrap: anywhere; line-height: 1.55 }
+.dnotes .badge { font-family: var(--fn); font-size: 12px; color: var(--ink) }
+.dutyOff { text-align: center; color: var(--faint); font-size: 12px; margin: 4px 0 0 }
 </style>
 </head>
 <body>
@@ -390,6 +399,7 @@ nav.tabs button[aria-current="page"] { color: #fff; background: var(--brand-grad
   <main class="gut" id="main"></main>
   <nav class="tabs" id="tabs">
     <button data-tab="home" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>근무표</button>
+    <button data-tab="duty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/><path d="M16 3.5v3M14.5 5h3"/></svg>당직</button>
     <button data-tab="prof"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>교수 찾기</button>
     <button data-tab="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>설정</button>
   </nav>

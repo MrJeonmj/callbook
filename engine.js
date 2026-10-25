@@ -111,6 +111,39 @@ let DEFAULT_CFG = null;
 const setDefaultCfg = c => { DEFAULT_CFG = c; };
 const LIVE = new Set(['EYE', 'PS', 'REHAB', 'OS', 'DERM']);
 
+/* 날짜 머리글(1·2·3…, 요일 줄) → 연월·일수·휴일. 근무표·당직표 공통 */
+function monthOf({ v, fill, sheetName }, fileName, dateRow, dateCol, wdRow, opt = {}) {
+  let nDays = 0;
+  while (nDays < 31 && WD.includes(v(wdRow, dateCol + nDays)[0] || '#')) nDays++;
+  const day1 = WD.indexOf(v(wdRow, dateCol)[0]);
+  const issues = [];
+  let ym = opt.ym;
+  if (!ym) {
+    const m = /(20\d{2})\D{0,8}?(1[0-2]|0?[1-9])(?!\d)/.exec(fileName || '');
+    const now = new Date(), cs = m ? [[+m[1], +m[2]]] : [];
+    for (let k = -6; k <= 12; k++) { const d = new Date(now.getFullYear(), now.getMonth() + k, 1); cs.push([d.getFullYear(), d.getMonth() + 1]); }
+    let ok = cs.filter(([y, mo]) => jsWd(y, mo, 1) === day1 && new Date(y, mo, 0).getDate() === nDays);
+    if (!m) ok.sort((a, b) => Math.abs(a[0] * 12 + a[1] - now.getFullYear() * 12 - now.getMonth() - 1) - Math.abs(b[0] * 12 + b[1] - now.getFullYear() * 12 - now.getMonth() - 1));
+    ym = ok[0] || cs[0];
+  }
+  const [Y, M] = ym;
+  if (jsWd(Y, M, 1) !== day1) issues.push(`${Y}년 ${M}월 1일 요일이 근무표와 다름 → 연월 확인`);
+  if (new Date(Y, M, 0).getDate() !== nDays) issues.push(`${Y}년 ${M}월 일수와 근무표 일수(${nDays}) 다름`);
+  if (!String(sheetName).includes(String(M))) issues.push(`시트 탭 이름(${sheetName})이 ${M}월과 다르지만 날짜·요일 기준 ${Y}년 ${M}월로 처리`);
+  const days = Array.from({ length: nDays }, (_, i) => i + 1);
+  let holi;
+  if (opt.holidays) holi = new Set(opt.holidays);
+  else {
+    holi = new Set(days.filter(d => jsWd(Y, M, d) >= 5));
+    const sun = days.find(d => jsWd(Y, M, d) === 6);
+    const sunf = sun ? fill(dateRow, dateCol + sun - 1) : '';
+    const fr = {}; days.filter(d => jsWd(Y, M, d) < 5).forEach(d => { const f = fill(dateRow, dateCol + d - 1); fr[f] = (fr[f] || 0) + 1; });
+    const normal = Object.entries(fr).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+    if (sunf && sunf !== normal) days.forEach(d => { if (jsWd(Y, M, d) < 5 && fill(dateRow, dateCol + d - 1) === sunf) holi.add(d); });
+  }
+  return { Y, M, nDays, days, holi, issues };
+}
+
 /* ============================================================ 추출 */
 function extractBook(book, fileName, opt = {}) {
   const { grid, maxRow, maxCol } = book;
@@ -138,34 +171,7 @@ function extractBook(book, fileName, opt = {}) {
     s.excluded = EXCLUDE.test(s.name);
   });
   const S0 = cands[0];
-  let nDays = 0;
-  while (nDays < 31 && WD.includes(v(S0.wdRow, S0.dateCol + nDays)[0] || '#')) nDays++;
-  const day1 = WD.indexOf(v(S0.wdRow, S0.dateCol)[0]);
-  const issues = [];
-  let ym = opt.ym;
-  if (!ym) {
-    const m = /(20\d{2})\D{0,8}?(1[0-2]|0?[1-9])(?!\d)/.exec(fileName || '');
-    const now = new Date(), cs = m ? [[+m[1], +m[2]]] : [];
-    for (let k = -6; k <= 12; k++) { const d = new Date(now.getFullYear(), now.getMonth() + k, 1); cs.push([d.getFullYear(), d.getMonth() + 1]); }
-    let ok = cs.filter(([y, mo]) => jsWd(y, mo, 1) === day1 && new Date(y, mo, 0).getDate() === nDays);
-    if (!m) ok.sort((a, b) => Math.abs(a[0] * 12 + a[1] - now.getFullYear() * 12 - now.getMonth() - 1) - Math.abs(b[0] * 12 + b[1] - now.getFullYear() * 12 - now.getMonth() - 1));
-    ym = ok[0] || cs[0];
-  }
-  const [Y, M] = ym;
-  if (jsWd(Y, M, 1) !== day1) issues.push(`${Y}년 ${M}월 1일 요일이 근무표와 다름 → 연월 확인`);
-  if (new Date(Y, M, 0).getDate() !== nDays) issues.push(`${Y}년 ${M}월 일수와 근무표 일수(${nDays}) 다름`);
-  if (!String(book.sheetName).includes(String(M))) issues.push(`시트 탭 이름(${book.sheetName})이 ${M}월과 다르지만 날짜·요일 기준 ${Y}년 ${M}월로 처리`);
-  const days = Array.from({ length: nDays }, (_, i) => i + 1);
-  let holi;
-  if (opt.holidays) holi = new Set(opt.holidays);
-  else {
-    holi = new Set(days.filter(d => jsWd(Y, M, d) >= 5));
-    const sun = days.find(d => jsWd(Y, M, d) === 6);
-    const sunf = sun ? fill(S0.dateRow, S0.dateCol + sun - 1) : '';
-    const fr = {}; days.filter(d => jsWd(Y, M, d) < 5).forEach(d => { const f = fill(S0.dateRow, S0.dateCol + d - 1); fr[f] = (fr[f] || 0) + 1; });
-    const normal = Object.entries(fr).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
-    if (sunf && sunf !== normal) days.forEach(d => { if (jsWd(Y, M, d) < 5 && fill(S0.dateRow, S0.dateCol + d - 1) === sunf) holi.add(d); });
-  }
+  const { Y, M, nDays, days, holi, issues } = monthOf({ v, fill, sheetName: book.sheetName }, fileName, S0.dateRow, S0.dateCol, S0.wdRow, opt);
 
   const units = [];
   const mkUnit = (s, rows, name, key, kind, order, trailer) => {
@@ -646,10 +652,102 @@ function profPA(cx, h, d, pairs, work, cover, label) {
 }
 
 /* 원자료 → 사람이 읽는 표(관리자 수정 미리보기·Claude 전달용) */
+/* ============================================================ 당직표 (교수 당직)
+ * "○○ 당직표" 구역 → 날짜 머리글(1·2·3…)마다 블록, 날짜 칸이 채워진 줄 = 당직 줄,
+ * "이름 010-…" 칸 = 연락처(같은 열 위쪽 머리글 = 소속), "임상과장" = 과장, 나머지 글 = 메모.
+ * 날짜 칸의 이름·코드(신경외과 J·H…)는 연락처와 이어 붙여 전화할 수 있게 한다. */
+const DUTY_PHONE = /0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}/;
+function parseContact(t) {
+  const m = DUTY_PHONE.exec(t); if (!m) return null;
+  const phone = m[0].replace(/\D/g, '').replace(/^(0\d{1,2})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+  let pre = clean(t.slice(0, m.index)).replace(/[:：]\s*$/, ''), role = '', code = '';
+  pre = pre.replace(/^(pf|f)\s*\.?\s*/i, x => { role = /^pf/i.test(x) ? 'Pf' : 'F'; return ''; });
+  const r = /^(R\d)\s*/.exec(pre); if (r) { role = r[1]; pre = pre.slice(r[0].length); }
+  const c = /^([A-Z]{1,2})\s+(?=[가-힣])/.exec(pre); if (c) { code = c[1]; pre = pre.slice(c[0].length); }
+  const name = pre.replace(/\s+/g, '');
+  if (!/^[가-힣]{2,4}[A-Z]?$/.test(name)) return null;
+  return { name, phone, role, code, note: clean(t.slice(m.index + m[0].length)).replace(/^[-–]\s*/, '') };
+}
+const dutyKey = name => name.replace(/\s/g, '');
+function extractDuty(book, fileName, opt = {}) {
+  const { grid, maxRow } = book;
+  const cell = (r, c) => grid.get(r)?.get(c);
+  const v = (r, c) => clean(cell(r, c)?.v);
+  const raw = (r, c) => String(cell(r, c)?.v ?? '').trim();
+  const fill = (r, c) => cell(r, c)?.fill || '';
+  const titles = [];
+  for (let r = 1; r <= maxRow; r++) for (let c = 1; c <= 6; c++) { const t = v(r, c);
+    if (/당직표\s*$/.test(t) && !t.startsWith('*')) { titles.push({ r0: r, name: t.replace(/\s*당직표\s*$/, '').trim() }); break; } }
+  if (!titles.length) throw new Error('"○○ 당직표" 제목을 찾지 못했습니다.');
+  const dateRowAt = r => { const row = grid.get(r); if (!row) return 0;
+    for (const [c, x] of row) if (clean(x.v) === '1' && v(r, c + 1) === '2' && v(r, c + 2) === '3') return c; return 0; };
+  let mi = null;
+  const sections = titles.map((t, i) => {
+    const end = (titles[i + 1]?.r0 ?? maxRow + 1) - 1;
+    const blocks = [], used = new Set(), contacts = [], notes = [];
+    let chief = '';
+    for (let r = t.r0 + 1; r <= end; r++) { const dc = dateRowAt(r); if (!dc) continue;
+      let n = 0; while (n < 31 && v(r, dc + n) === String(n + 1)) n++;
+      const wd = WD.includes(v(r + 1, dc)[0] || '#') ? r + 1 : 0;
+      if (!mi && wd) mi = monthOf({ v, fill, sheetName: book.sheetName }, fileName, r, dc, wd, opt);
+      const sub = dc > 1 && v(r, dc - 1) && !/^\d+$/.test(v(r, dc - 1)) ? v(r, dc - 1) : '';
+      blocks.push({ r, dc, n, wd, sub, rows: [] }); used.add(r); if (wd) used.add(wd);
+    }
+    // 당직 줄 = 날짜 머리글 바로 아래(빈 줄 2개까지 건너뜀)부터 이어지는 줄들. 빈 줄·*메모·연락처·임상과장에서 멈춤
+    blocks.forEach((b, bi) => {
+      const stop = (blocks[bi + 1]?.r ?? end + 1) - 1;
+      let r = (b.wd || b.r) + 1, skip = 0;
+      while (r <= stop && !v(r, b.dc - 1) && skip < 2) { r++; skip++; }
+      for (; r <= stop; r++) {
+        const label = v(r, b.dc - 1);
+        if (!label || label.startsWith('*') || DUTY_PHONE.test(label) || /^임상과장/.test(label)) break;
+        const cells = Array.from({ length: b.n }, (_, k) => raw(r, b.dc + k).replace(/\s*\n\s*/g, ' '));
+        b.rows.push({ label, cells }); used.add(r);
+      }
+    });
+    // 연락처·소속·과장·메모
+    const head = {};
+    for (let r = t.r0 + 1; r <= end; r++) { if (used.has(r)) continue; const row = grid.get(r); if (!row) continue;
+      const cs = [...row].sort((a, b) => a[0] - b[0]).filter(([, x]) => clean(x.v));
+      for (let k = 0; k < cs.length; k++) { const [c, x] = cs[k]; const t2 = clean(x.v);
+        const ch = /^임상과장\s*[:：]?\s*(.*)$/.exec(t2);
+        if (ch) { chief = clean(ch[1]) || (cs[k + 1] ? clean(cs[k + 1][1].v).replace(DUTY_PHONE, '').trim() : ''); if (!ch[1] && cs[k + 1]) k++; continue; }
+        const ct = parseContact(t2);
+        if (ct) { ct.group = head[c] || ''; contacts.push(ct); continue; }
+        if (t2.length <= 12 && !t2.startsWith('*') && cs.length > 1 || /^(M[A-Z]|종양내과|혈액내과)$/.test(t2)) { head[c] = t2; continue; }
+        notes.push(t2);
+      }
+    }
+    let rows = blocks.flatMap(b => b.rows.map(x => ({ sub: b.sub, label: x.label, cells: x.cells })));
+    // 채워진 줄이 있으면 빈 줄(시간 설명·백업 등)은 메모로. 전부 비었으면(미입력) 줄 이름은 그대로 둔다
+    if (rows.some(x => x.cells.some(Boolean))) { notes.unshift(...rows.filter(x => !x.cells.some(Boolean)).map(x => x.label)); rows = rows.filter(x => x.cells.some(Boolean)); }
+    return { key: dutyKey(t.name), name: t.name, rows, contacts, notes, chief };
+  });
+  if (!mi) throw new Error('당직표의 1·2·3 날짜 머리글과 요일 줄을 찾지 못했습니다.');
+  const { Y, M, nDays, holi, issues } = mi;
+  sections.forEach(s => s.rows.forEach(x => { x.cells = Array.from({ length: nDays }, (_, k) => x.cells[k] || ''); }));
+  return { Y, M, nDays, holidays: [...holi].sort((a, b) => a - b), issues, sourceName: fileName || '', sheetName: book.sheetName, sections };
+}
+// 날짜 칸 글 → 연락처 (코드 한두 글자, 또는 이름이 들어 있으면)
+function dutyPeople(sec, text, all = []) {
+  const t = text.replace(/\s/g, ''); if (!t) return [];
+  if (/^[A-Z]{1,2}$/.test(t)) return sec.contacts.filter(c => c.code === t);
+  const out = []; let rest = t;
+  for (const c of [...sec.contacts, ...all.filter(a => !sec.contacts.includes(a))].sort((a, b) => b.name.length - a.name.length)) if (rest.includes(c.name) && !out.some(o => o.name === c.name)) { out.push(c); rest = rest.replace(c.name, '·'); }
+  return out;
+}
+// 같은 과 연락처를 먼저, 없으면 다른 과에 적힌 연락처(예: 내과 명단이 감염내과 표 아래에 있음)
+function dutyFor(duty, d) {
+  const all = duty.sections.flatMap(s => s.contacts);
+  return duty.sections.map(s => ({ ...s, filled: s.rows.some(x => x.cells.some(Boolean)), items: s.rows.filter(x => x.cells[d - 1]).map(x => ({ sub: x.sub, label: x.label, text: x.cells[d - 1], people: dutyPeople(s, x.cells[d - 1], all) })) }));
+}
+// 부서 하나 교체·비교용
+function dutyToGrid(sec, nDays) { return sec.rows.map(x => [(x.sub ? x.sub + ' / ' : '') + x.label, ...Array.from({ length: nDays }, (_, k) => x.cells[k] || '')]); }
+
 function unitToGrid(u, nDays) {
   const head = ['이름', '정보', ...Array.from({ length: nDays }, (_, i) => String(i + 1))];
   return [head, ...u.nurses.map(n => [n.name, clean(n.info), ...n.codes.map((c, i) => c + (n.marks?.[i] === 'Y' ? '#노랑' : n.marks?.[i] === 'B' ? '#파랑' : ''))])];
 }
 
-G.Engine = { readXlsx, extractBook, compute, ruleCheck, mergeRevised, setDefaultCfg, get DEFAULT_CFG() { return DEFAULT_CFG; }, UNK, WD, jsWd, unitToGrid, clean };
+G.Engine = { readXlsx, extractBook, extractDuty, dutyFor, dutyPeople, dutyToGrid, compute, ruleCheck, mergeRevised, setDefaultCfg, get DEFAULT_CFG() { return DEFAULT_CFG; }, UNK, WD, jsWd, unitToGrid, clean };
 })(typeof window !== 'undefined' ? window : globalThis);
