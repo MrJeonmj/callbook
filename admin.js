@@ -54,17 +54,23 @@ function askPin(msg) {
   });
 }
 
+// 최신 모델(Opus 5.5 등)은 도구 강제(tool_choice: tool)를 받지 않음 → auto + 지시문으로 다시 요청하고, 그 모델은 기억
+const NO_FORCE = new Set();
 async function claude({ system, content, tool, maxTokens = 16000 }) {
   const c = cfgA(), { apiKey } = await secrets();
   if (!apiKey) throw new Error('관리자 설정에 Claude API 키를 넣어 주세요');
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const model = c.model || 'claude-sonnet-4-5';
+  const call = force => fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: c.model || 'claude-sonnet-4-5', max_tokens: maxTokens, system, messages: [{ role: 'user', content }], tools: [tool], tool_choice: { type: 'tool', name: tool.name } }),
+    body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'user', content }], tools: [tool],
+      ...(force ? { system, tool_choice: { type: 'tool', name: tool.name } }
+                : { system: `${system}\n\n결과는 글로 쓰지 말고 반드시 ${tool.name} 도구를 한 번 호출해서 보고하세요.`, tool_choice: { type: 'auto' } }) }),
   });
-  const j = await r.json().catch(() => ({}));
+  let force = !NO_FORCE.has(model), r = await call(force), j = await r.json().catch(() => ({}));
+  if (force && r.status === 400 && /tool_choice/.test(j.error?.message || '')) { NO_FORCE.add(model); r = await call(false); j = await r.json().catch(() => ({})); }
   if (!r.ok) throw new Error(`Claude API 오류 ${r.status}: ${j.error?.message || r.statusText}`);
-  const t = (j.content || []).find(x => x.type === 'tool_use');
+  const t = (j.content || []).find(x => x.type === 'tool_use' && x.name === tool.name);
   if (!t) throw new Error('Claude 응답에 결과가 없습니다');
   if (j.stop_reason === 'max_tokens') throw new Error('Claude 응답이 길어서 잘렸습니다. 사진을 나눠서 올려 주세요');
   return t.input;
