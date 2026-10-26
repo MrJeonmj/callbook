@@ -8,6 +8,13 @@ const A = { busy: false, draft: null, dirty: false };
 const cfgA = () => LS.get('admin', { apiKey: '', model: '', pw: '', gh: { owner: '', repo: '', branch: 'main', path: App.DATA_URL, token: '' } });
 const clone = o => JSON.parse(JSON.stringify(o));
 const now = () => new Date().toISOString();
+// 폰에서 규칙 틀(키·구조)로 표현할 수 없는 변경 → 관리자가 직접 엔진·규칙을 고쳐야 함
+const MANUAL_WARN = '번호 규칙 방식이 바뀜 → 관리자 수동 업데이트 전까지 번호를 메모 원문으로 확인';
+function needManual(d, u, reason) {
+  d.manualUpdate = { ...(d.manualUpdate || {}), [u.key]: { name: u.name, at: now(), reason } };
+  d.manualWarn = { ...(d.manualWarn || {}), [u.key]: MANUAL_WARN };
+}
+const manualBox = reason => `<div class="banner"><b>규칙 방식이 바뀌어 폰에서 반영할 수 없어요 → 관리자 수동 업데이트 필요</b><br>${esc(reason)}</div>`;
 const ruleKey = u => u.key.startsWith('IM:') ? u.key.split(':')[1].split('/')[0] : u.key;
 
 /* ------------------------------------------------------------ Claude API */
@@ -87,7 +94,7 @@ const REVIEW_TOOL = {
   input_schema: { type: 'object', properties: {
     units: { type: 'array', items: { type: 'object', properties: {
       key: { type: 'string', description: '과 키(입력 그대로)' },
-      status: { type: 'string', enum: ['ok', 'changed', 'unclear'] },
+      status: { type: 'string', enum: ['ok', 'changed', 'structure', 'unclear'], description: 'structure = 번호만이 아니라 규칙 방식(새 조건·기준 날짜·근무자 유무·시간대별 등)이 바뀌어 현재 규칙의 키·구조로는 표현할 수 없음' },
       summary: { type: 'string', description: '바뀐 점 또는 확인 결과 한두 문장' },
       cfg: { type: 'object', description: 'status=changed일 때만: 이 과의 새 규칙 전체. 현재 규칙과 똑같은 키·구조를 유지하고 값만 바꿀 것' },
       question: { type: 'string', description: '관리자에게 확인할 질문(없으면 생략)' } }, required: ['key', 'status', 'summary'] } },
@@ -106,6 +113,7 @@ const DEPT_TOOL = {
     memo_text: { type: 'string', description: '자료에 보이는 번호 안내 메모 원문 전체를 글자 그대로(요약·고쳐 쓰기 금지). 줄마다 \\n으로 구분. 근무표 칸(간호사 이름·근무코드·개인폰)은 빼고, 메모가 안 보이면 빈 문자열' },
     memo_complete: { type: 'boolean', description: 'memo_text가 이 과 메모 전체이면 true, 사진에 일부만 보이거나 잘려서 일부만 읽었으면 false' },
     cfg: { type: 'object', description: '메모 때문에 번호 규칙이 바뀌어야 할 때만: 이 과의 새 규칙 전체(현재와 같은 구조)' },
+    rule_structure_change: { type: 'string', description: '메모 변경이 현재 규칙의 키·구조로 표현할 수 없는 방식 변경(새 조건·기준 날짜·근무자 유무·시간대별 번호 등)이면 무엇이 바뀌었는지 한두 문장, 아니면 빈 문자열. 이때는 cfg를 주지 마세요' },
     notes: { type: 'string', description: '읽기 어려웠던 칸 등 관리자에게 알릴 점' } }, required: ['nurses'] },
 };
 
@@ -121,6 +129,7 @@ function open() {
   openSheet(`<div class="admin stack">${header()}
     ${!ready ? '<div class="banner">먼저 아래 "관리자 설정"에서 Claude API 키와 근무표 비밀번호를 넣어 주세요.</div>' : ''}
     ${legacySec() ? '<div class="banner">관리자 설정에서 PIN을 정해 저장하면 키·토큰이 암호화됩니다.</div>' : ''}
+    ${Object.keys(A.draft?.manualUpdate || {}).length ? `<button class="banner block" id="aManual" style="text-align:left;width:100%;font:inherit;font-size:13px;font-weight:600;cursor:pointer">관리자 수동 업데이트 필요 ${Object.keys(A.draft.manualUpdate).length}곳: ${esc(Object.values(A.draft.manualUpdate).map(x => x.name).join(', '))}</button>` : ''}
     <button class="btn brand block" id="aNew">새 달 근무표 올리기 (엑셀)</button>
     <button class="btn block" id="aFix" ${A.draft ? '' : 'disabled'}>부서 근무표 수정 (엑셀·사진)</button>
     <button class="btn block" id="aRule" ${A.draft ? '' : 'disabled'}>번호 규칙 보기·수정</button>
@@ -140,6 +149,7 @@ function open() {
   $('aNew').onclick = newMonth; $('aFix').onclick = fixDept; $('aRule').onclick = rules;
   $('aDutyNew').onclick = dutyNew; $('aDutyFix').onclick = dutyFix;
   $('aMemo') && ($('aMemo').onclick = memoView);
+  $('aManual') && ($('aManual').onclick = manualView);
   $('aPub').onclick = publish; $('aExp').onclick = exportBlob; $('aXlsx').onclick = exportXlsx;
   $('aLog').onclick = showLog; $('aSet').onclick = settings; $('aClose').onclick = closeSheet;
   $('aDiscard') && ($('aDiscard').onclick = () => { A.draft = App.S.data ? clone(App.S.data) : null; A.dirty = false; toast('변경을 버렸습니다'); open(); });
@@ -257,13 +267,15 @@ async function review(draft, out, keys) {
   try {
     const r = await claude({ system: DOMAIN, tool: REVIEW_TOOL, content: [{ type: 'text', text:
       `${draft.Y}년 ${draft.M}월 근무표의 과별 번호 안내 메모와 현재 번호 규칙입니다. 메모가 규칙과 달라진 곳(번호 변경, 교수 추가·삭제·팀 이동, 시간대·인원별 규칙 변경, 새 예외)을 찾아 주세요. memo_changed_lines는 지난 자료와 달라진 메모 줄입니다(있으면 특히 살펴 주세요).\n` +
-      `규칙이 바뀌어야 하면 status=changed와 함께 그 과의 새 규칙 전체를 cfg로 주세요(키·구조는 현재와 동일). current_rule이 null인 과는 cfg 없이 summary만.\n\n` + JSON.stringify(units) }] });
+      `규칙이 바뀌어야 하면 status=changed와 함께 그 과의 새 규칙 전체를 cfg로 주세요(키·구조는 현재와 동일). 현재 구조로 표현할 수 없는 방식 변경이면 status=structure로 하고 cfg 없이 summary에 무엇이 바뀌었는지 적으세요. current_rule이 null인 과는 cfg 없이 summary만.\n\n` + JSON.stringify(units) }] });
     busy('');
     const list = (r.units || []).filter(x => x.status !== 'ok');
     out.innerHTML = `<div class="diffItem"><b>${esc(r.overall || '')}</b><span style="font-size:13px;color:var(--muted)">문제없음 ${(r.units || []).filter(x => x.status === 'ok').length}곳 · 확인 ${list.length}곳</span></div>` +
       list.map((x, i) => {
         const old = draft.cfg[ruleKey({ key: x.key })];
         const can = x.status === 'changed' && x.cfg && old && sameShape(old, x.cfg);
+        const u = draft.units.find(v => v.key === x.key);
+        if (u && (x.status === 'structure' || (x.cfg && old && !sameShape(old, x.cfg)))) { needManual(draft, u, x.summary); return `<div class="diffItem"><b>${esc(u.name)}</b>${manualBox(x.summary)}</div>`; }
         return `<div class="diffItem"><label>${can ? `<input type="checkbox" data-i="${i}" checked>` : ''}${esc(draft.units.find(u => u.key === x.key)?.name || x.key)} · ${x.status === 'changed' ? '변경' : '확인 필요'}</label>
           <div style="font-size:13.5px">${esc(x.summary)}</div>${x.question ? `<div class="wt">? ${esc(x.question)}</div>` : ''}
           ${x.cfg ? `<pre>${esc(diffText(old, x.cfg))}</pre>` : ''}${x.cfg && !can ? '<div class="wt">규칙 구조가 달라 자동 적용하지 않습니다. "번호 규칙 보기·수정"에서 직접 고치세요.</div>' : ''}</div>`;
@@ -370,6 +382,7 @@ function showDeptDiff(ui, r, wholeUnit, src) {
     for (const n of u.nurses) if (!nu.nurses.some(x => x.name.replace(/\s/g, '') === n.name.replace(/\s/g, ''))) nu.nurses.push(clone(n));
   }
   let changes = 0;
+  const struct = String(r.rule_structure_change || '').trim() || (r.cfg && d.cfg[ruleKey(u)] && !sameShape(d.cfg[ruleKey(u)], r.cfg) ? `Claude가 제안한 규칙의 구조가 지금과 다름: ${r.memo_changes || ''}` : '');
   const head = `<tr><th>이름</th>${Array.from({ length: d.nDays }, (_, i) => `<th>${i + 1}</th>`).join('')}</tr>`;
   const body = nu.nurses.map(n => {
     const o = u.nurses.find(x => x.name.replace(/\s/g, '') === n.name.replace(/\s/g, ''));
@@ -381,7 +394,7 @@ function showDeptDiff(ui, r, wholeUnit, src) {
   const removed = u.nurses.filter(o => !nu.nurses.some(n => n.name.replace(/\s/g, '') === o.name.replace(/\s/g, '')));
   $('fxOut').innerHTML = `<div class="stack"><div class="kv"><span>바뀐 칸</span><b>${changes}칸</b><span>새 간호사</span><b>${nu.nurses.filter(n => !u.nurses.some(o => o.name.replace(/\s/g, '') === n.name.replace(/\s/g, ''))).length}명</b>${removed.length ? `<span>빠지는 간호사</span><b>${esc(removed.map(n => n.name).join(', '))}</b>` : ''}</div>
     ${r.memo_changes ? `<div class="banner">메모 변경: ${esc(r.memo_changes)}</div>` : ''}${memoTxt ? `<details class="dnotes"><summary>읽은 메모 원문${r.memo_complete ? '' : ' (일부 · 기존 메모 유지)'}</summary>${memoTxt.split(' ¦ ').map(t => `<p>${esc(t)}</p>`).join('')}</details>` : ''}${r.notes ? `<div class="wt" style="color:var(--muted)">${esc(r.notes)}</div>` : ''}
-    ${r.cfg ? `<div class="diffItem"><label><input type="checkbox" id="fxCfg" checked>번호 규칙도 바꾸기</label><pre>${esc(diffText(d.cfg[ruleKey(u)], r.cfg))}</pre></div>` : ''}
+    ${struct ? manualBox(struct) : ''}${r.cfg && !struct ? `<div class="diffItem"><label><input type="checkbox" id="fxCfg" checked>번호 규칙도 바꾸기</label><pre>${esc(diffText(d.cfg[ruleKey(u)], r.cfg))}</pre></div>` : ''}
     <div class="gridwrap"><table>${head}${body}</table></div>
     <button class="btn primary block" id="fxApply">이대로 반영 (게시 전 미리보기)</button></div>`;
   const fc = $('fxOut').querySelector('td.chg'); if (fc) fc.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -396,8 +409,10 @@ function showDeptDiff(ui, r, wholeUnit, src) {
     if (md[u.key]) d.memoChanged = { ...(d.memoChanged || {}), ...md };
     if (tmp?.log.length) { d.cfg[ruleKey(u)] = tmp.cfg[ruleKey(u)]; d.log = [...(d.log || []), ...tmp.log]; }
     d.units[ui] = nu;
-    if (r.cfg && $('fxCfg')?.checked && sameShape(d.cfg[ruleKey(u)], r.cfg)) d.cfg[ruleKey(u)] = r.cfg;
-    if (r.memo_changes && !wholeUnit) { d.manualWarn = d.manualWarn || {}; d.manualWarn[u.key] = `수정본 메모 변경: ${r.memo_changes}`; }
+    if (r.cfg && !struct && $('fxCfg')?.checked && sameShape(d.cfg[ruleKey(u)], r.cfg)) d.cfg[ruleKey(u)] = r.cfg;
+    if (struct) needManual(d, u, struct);
+    else if (tmp?.manualUpdate?.[u.key]) needManual(d, u, tmp.manualUpdate[u.key].reason);
+    else if (r.memo_changes && !wholeUnit) { d.manualWarn = d.manualWarn || {}; d.manualWarn[u.key] = `수정본 메모 변경: ${r.memo_changes}`; }
     d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${u.name} 근무표 수정 (${changes}칸)` }];
     if (src) keepFiles(src, `${u.name} 근무표 수정`, u.key);
     A.dirty = true; setData(clone(d)); toast(`${u.name} 반영 · 게시해야 다른 사람에게 보입니다`); open();
@@ -434,6 +449,16 @@ function memoDiffHtml(mc) {
   if (!ks.length) return '';
   return `<div class="banner">메모가 지난 자료와 바뀐 과 ${ks.length}곳 — 비고·번호 규칙을 고쳐야 하는지 확인하세요</div><div class="diff">${ks.map(k => `<div class="diffItem"><b>${esc(mc[k].name)}</b>
     ${mc[k].added.map(t => `<div class="wt" style="color:var(--ok)">+ ${esc(t)}</div>`).join('')}${mc[k].removed.map(t => `<div class="wt" style="color:var(--bad)">− ${esc(t)}</div>`).join('')}</div>`).join('')}</div>`;
+}
+function manualView() {
+  const m = A.draft.manualUpdate || {};
+  openSheet(`<div class="admin stack"><h3>관리자 수동 업데이트 필요</h3><p class="sub">규칙 방식이 바뀌어 폰에서 반영할 수 없는 과입니다. 그동안 이 과의 줄에는 ⚠가 붙습니다.</p>
+    ${Object.entries(m).map(([k, x]) => `<div class="diffItem"><b>${esc(x.name)}</b><span style="font-size:12px;color:var(--muted)">${new Date(x.at).toLocaleString('ko-KR')}</span><div style="font-size:13.5px">${esc(x.reason)}</div>
+      <button class="btn block" data-done="${esc(k)}">업데이트 끝남 · 표시 지우기</button></div>`).join('')}${back()}</div>`); bindBack();
+  document.querySelectorAll('[data-done]').forEach(b => b.onclick = () => {
+    const k = b.dataset.done, d = A.draft; delete d.manualUpdate[k]; if (d.manualWarn?.[k] === MANUAL_WARN) delete d.manualWarn[k];
+    d.log = [...(d.log || []), { at: now(), what: `${m[k]?.name || k} 관리자 수동 업데이트 표시 지움` }]; A.dirty = true; setData(clone(d)); toast('지웠습니다 · 게시해야 반영됩니다'); manualView();
+  });
 }
 function memoView() {
   openSheet(`<div class="admin stack"><h3>메모 바뀐 과</h3>${memoDiffHtml(A.draft.memoChanged)}
