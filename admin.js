@@ -103,6 +103,8 @@ const DEPT_TOOL = {
       codes: { type: 'array', items: { type: ['string', 'null'] }, description: '1일~말일 근무코드. 사진에 없거나 못 읽은 날은 null' },
       marks: { type: 'array', items: { type: ['string', 'null'] }, description: '1일~말일 셀 색: Y=노랑, B=파랑, ""=없음, null=모름' } }, required: ['name', 'codes'] } },
     memo_changes: { type: 'string', description: '번호 안내 메모가 기존과 달라졌으면 내용, 아니면 빈 문자열' },
+    memo_text: { type: 'string', description: '자료에 보이는 번호 안내 메모 원문 전체를 글자 그대로(요약·고쳐 쓰기 금지). 줄마다 \\n으로 구분. 근무표 칸(간호사 이름·근무코드·개인폰)은 빼고, 메모가 안 보이면 빈 문자열' },
+    memo_complete: { type: 'boolean', description: 'memo_text가 이 과 메모 전체이면 true, 사진에 일부만 보이거나 잘려서 일부만 읽었으면 false' },
     cfg: { type: 'object', description: '메모 때문에 번호 규칙이 바뀌어야 할 때만: 이 과의 새 규칙 전체(현재와 같은 구조)' },
     notes: { type: 'string', description: '읽기 어려웠던 칸 등 관리자에게 알릴 점' } }, required: ['nurses'] },
 };
@@ -244,7 +246,7 @@ function newMonth() {
       };
       $('nmAi').onclick = async () => { fix(); await review(draft, $('nmAiOut')); };
       if (hasApiKey()) { $('nmAi').textContent = 'Claude로 메모 다시 검토'; fix(); review(draft, $('nmAiOut')); }   // 키가 있으면 자동 검토
-      $('nmApply').onclick = () => { fix(); A.draft = draft; A.dirty = true; setData(clone(draft)); toast('미리보기로 바꿨습니다. 확인 후 게시하세요'); open(); };
+      $('nmApply').onclick = () => { fix(); A.draft = draft; keepFiles(f, `${draft.Y}년 ${draft.M}월 근무표 등록`, ''); A.dirty = true; setData(clone(draft)); toast('미리보기로 바꿨습니다. 확인 후 게시하세요'); open(); };
     } catch (e) { busy(''); $('nm').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
   });
 }
@@ -307,7 +309,7 @@ function deptPrompt(u, d, extra) {
   const grid = Engine.unitToGrid(u, d.nDays).map(r => r.join('\t')).join('\n');
   return `${d.Y}년 ${d.M}월(${d.nDays}일) "${u.name}" 근무표가 수정되었습니다. ${extra}\n` +
     `codes와 marks는 길이 ${d.nDays}의 배열(1일~${d.nDays}일)로, 자료에 없는 날은 null로 두세요. 코드 표기는 원본 그대로(팀 글자는 소문자, ★ 유지).\n` +
-    `기존 명단과 같은 사람은 이름 표기를 기존과 똑같이 맞추세요. 메모(번호 안내)가 바뀌었으면 memo_changes에 적고, 번호 규칙이 바뀌어야 하면 cfg에 새 규칙 전체를 주세요.\n\n` +
+    `기존 명단과 같은 사람은 이름 표기를 기존과 똑같이 맞추세요. 메모(번호 안내) 원문은 memo_text에 글자 그대로 옮기고, 기존과 바뀌었으면 memo_changes에도 적고, 번호 규칙이 바뀌어야 하면 cfg에 새 규칙 전체를 주세요.\n\n` +
     `[현재 저장된 근무표 (#노랑/#파랑은 셀 색)]\n${grid}\n\n[현재 메모]\n${u.memo}\n\n[현재 번호 규칙]\n${JSON.stringify(d.cfg[ruleKey(u)] ?? null)}`;
 }
 async function fromImages(ui, files) {
@@ -317,7 +319,7 @@ async function fromImages(ui, files) {
     const imgs = []; for (const f of files) imgs.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: await shrink(f) } });
     busy('Claude가 사진을 읽는 중… (1분 정도)');
     const r = await claude({ system: DOMAIN, tool: DEPT_TOOL, content: [...imgs, { type: 'text', text: deptPrompt(u, d, '첨부 사진에서 이 부서 근무표를 읽어 주세요. 셀 배경색(노랑/파랑)도 확인하세요.') }] });
-    busy(''); showDeptDiff(ui, r);
+    busy(''); showDeptDiff(ui, r, null, files);
   } catch (e) { busy(''); $('fxOut').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
 }
 async function fromXlsx(ui, f) {
@@ -334,13 +336,13 @@ async function fromXlsx(ui, f) {
     if (found) {
       busy('');
       const { unit, keptMemo } = Engine.mergeRevised(u, found);
-      return showDeptDiff(ui, { nurses: unit.nurses, memo_changes: !keptMemo && unit.memo !== u.memo ? '엑셀의 메모가 기존과 다릅니다' : '', notes: keptMemo ? '엑셀에서 직접 읽음 · 메모가 없어 기존 번호 안내 유지' : '엑셀에서 직접 읽음' }, unit);
+      return showDeptDiff(ui, { nurses: unit.nurses, memo_changes: !keptMemo && unit.memo !== u.memo ? '엑셀의 메모가 기존과 다릅니다' : '', notes: keptMemo ? '엑셀에서 직접 읽음 · 메모가 없어 기존 번호 안내 유지' : '엑셀에서 직접 읽음' }, unit, f);
     }
     // 양식이 달라 자동 인식이 안 되면 표를 글로 바꿔 Claude에게
     const rows = []; for (let r = 1; r <= Math.min(book.maxRow, 120); r++) { const row = book.grid.get(r); if (!row) continue; const cells = []; for (let c = 1; c <= Math.min(book.maxCol, 50); c++) { const x = row.get(c); cells.push((x?.v ?? '') + (x?.fill && /FFC000|FFFF00/.test(x.fill) ? '#노랑' : '')); } rows.push(cells.join('\t').replace(/\t+$/, '')); }
     busy('양식이 달라 Claude가 표를 읽는 중…');
     const res = await claude({ system: DOMAIN, tool: DEPT_TOOL, content: [{ type: 'text', text: deptPrompt(u, d, '아래는 수정본 엑셀의 셀 내용(탭 구분)입니다.') + '\n\n[수정본 엑셀]\n' + rows.join('\n') }] });
-    busy(''); showDeptDiff(ui, res);
+    busy(''); showDeptDiff(ui, res, null, f);
   } catch (e) { busy(''); $('fxOut').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
 }
 function mergeUnit(u, r, drop, nDays) {
@@ -359,9 +361,11 @@ function mergeUnit(u, r, drop, nDays) {
   if (drop) nu.nurses = nu.nurses.filter(x => seen.has(x));
   return nu;
 }
-function showDeptDiff(ui, r, wholeUnit) {
+function showDeptDiff(ui, r, wholeUnit, src) {
   const d = A.draft, u = d.units[ui], drop = $('fxDrop').checked;
   const nu = wholeUnit ? Object.assign(clone(wholeUnit), { key: u.key, name: u.name, kind: u.kind, order: u.order }) : mergeUnit(u, r, drop, d.nDays);
+  const memoTxt = !wholeUnit && String(r.memo_text || '').split('\n').map(x => x.trim()).filter(Boolean).join(' ¦ ');
+  if (memoTxt) { nu.memoRead = { at: now(), complete: !!r.memo_complete, text: memoTxt }; if (r.memo_complete) nu.memo = memoTxt; }
   if (wholeUnit && !drop) { // 엑셀에 없는 기존 간호사는 유지
     for (const n of u.nurses) if (!nu.nurses.some(x => x.name.replace(/\s/g, '') === n.name.replace(/\s/g, ''))) nu.nurses.push(clone(n));
   }
@@ -376,15 +380,15 @@ function showDeptDiff(ui, r, wholeUnit) {
   }).join('');
   const removed = u.nurses.filter(o => !nu.nurses.some(n => n.name.replace(/\s/g, '') === o.name.replace(/\s/g, '')));
   $('fxOut').innerHTML = `<div class="stack"><div class="kv"><span>바뀐 칸</span><b>${changes}칸</b><span>새 간호사</span><b>${nu.nurses.filter(n => !u.nurses.some(o => o.name.replace(/\s/g, '') === n.name.replace(/\s/g, ''))).length}명</b>${removed.length ? `<span>빠지는 간호사</span><b>${esc(removed.map(n => n.name).join(', '))}</b>` : ''}</div>
-    ${r.memo_changes ? `<div class="banner">메모 변경: ${esc(r.memo_changes)}</div>` : ''}${r.notes ? `<div class="wt" style="color:var(--muted)">${esc(r.notes)}</div>` : ''}
+    ${r.memo_changes ? `<div class="banner">메모 변경: ${esc(r.memo_changes)}</div>` : ''}${memoTxt ? `<details class="dnotes"><summary>읽은 메모 원문${r.memo_complete ? '' : ' (일부 · 기존 메모 유지)'}</summary>${memoTxt.split(' ¦ ').map(t => `<p>${esc(t)}</p>`).join('')}</details>` : ''}${r.notes ? `<div class="wt" style="color:var(--muted)">${esc(r.notes)}</div>` : ''}
     ${r.cfg ? `<div class="diffItem"><label><input type="checkbox" id="fxCfg" checked>번호 규칙도 바꾸기</label><pre>${esc(diffText(d.cfg[ruleKey(u)], r.cfg))}</pre></div>` : ''}
     <div class="gridwrap"><table>${head}${body}</table></div>
     <button class="btn primary block" id="fxApply">이대로 반영 (게시 전 미리보기)</button></div>`;
   const fc = $('fxOut').querySelector('td.chg'); if (fc) fc.scrollIntoView({ block: 'nearest', inline: 'center' });
   // 수정본 엑셀의 메모가 바뀌었으면 그 과만 Claude 검토(키가 있을 때). 적용한 규칙은 "이대로 반영" 때 함께 들어간다
-  const md = wholeUnit ? Engine.memoDiff([u], [nu]) : {};
+  const md = Engine.memoDiff([u], [nu]);
   let tmp = null;
-  if (md[u.key] && hasApiKey()) {
+  if (wholeUnit && md[u.key] && hasApiKey()) {
     tmp = { ...d, cfg: clone(d.cfg), log: [], memoChanged: md, units: d.units.map((x, i) => i === ui ? nu : x) };
     $('fxOut').insertAdjacentHTML('beforeend', '<div id="fxAi" class="diff" style="margin-top:8px"></div>'); review(tmp, $('fxAi'), [u.key]);
   }
@@ -395,6 +399,7 @@ function showDeptDiff(ui, r, wholeUnit) {
     if (r.cfg && $('fxCfg')?.checked && sameShape(d.cfg[ruleKey(u)], r.cfg)) d.cfg[ruleKey(u)] = r.cfg;
     if (r.memo_changes && !wholeUnit) { d.manualWarn = d.manualWarn || {}; d.manualWarn[u.key] = `수정본 메모 변경: ${r.memo_changes}`; }
     d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${u.name} 근무표 수정 (${changes}칸)` }];
+    if (src) keepFiles(src, `${u.name} 근무표 수정`, u.key);
     A.dirty = true; setData(clone(d)); toast(`${u.name} 반영 · 게시해야 다른 사람에게 보입니다`); open();
   };
 }
@@ -444,6 +449,7 @@ const DUTY_TOOL = {
       label: { type: 'string', description: '당직 줄 이름(시간대·구분). 기존 줄과 같으면 표기를 똑같이' },
       cells: { type: 'array', items: { type: ['string', 'null'] }, description: '1일~말일 칸 내용(교수 이름·코드 원문 그대로). 사진에 없거나 못 읽은 날은 null' } }, required: ['label', 'cells'] } },
     contacts_changed: { type: 'string', description: '연락처·call 순서 메모가 기존과 달라졌으면 내용, 아니면 빈 문자열' },
+    notes_text: { type: 'string', description: '사진에 보이는 이 과의 연락처·call 순서·메모 원문 전체를 글자 그대로(요약 금지). 줄마다 \\n으로 구분. 안 보이면 빈 문자열' },
     notes: { type: 'string', description: '읽기 어려웠던 칸 등 관리자에게 알릴 점' } }, required: ['rows'] },
 };
 function dutyNew() {
@@ -463,6 +469,7 @@ function dutyNew() {
         <button class="btn primary block" id="dnApply">이 당직표로 미리보기 (게시 전)</button>`;
       $('dnApply').onclick = () => {
         d.duty = du; d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${du.Y}년 ${du.M}월 당직표 등록 (${f.name})` }];
+        keepFiles(f, `${du.Y}년 ${du.M}월 당직표 등록`, 'duty');
         A.dirty = true; setData(clone(d)); toast('미리보기로 바꿨습니다. 확인 후 게시하세요'); open();
       };
     } catch (e) { busy(''); $('dn').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
@@ -487,7 +494,7 @@ async function dutyFromXlsx(si, f) {
     if (!n) throw new Error(`엑셀에서 "${s.name} 당직표"를 찾지 못했습니다`);
     // 수정본에 연락처·메모가 없으면 기존 것 유지
     const ns = { ...n, key: s.key, name: s.name, contacts: n.contacts.length ? n.contacts : s.contacts, notes: n.notes.length ? n.notes : s.notes, chief: n.chief || s.chief };
-    busy(''); showDutyDiff(si, ns, n.contacts.length ? '' : '수정본에 연락처가 없어 기존 연락처 유지');
+    busy(''); showDutyDiff(si, ns, n.contacts.length ? '' : '수정본에 연락처가 없어 기존 연락처 유지', f);
   } catch (e) { busy(''); $('dfOut').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
 }
 async function dutyFromImages(si, files) {
@@ -502,15 +509,17 @@ async function dutyFromImages(si, files) {
       `cells는 길이 ${du.nDays}의 배열(1일~${du.nDays}일). 칸에 적힌 이름·코드를 원문 그대로, 사진에 없는 날은 null.\n` +
       `[현재 저장된 당직표 (줄 이름 탭 1일…)]\n${grid}\n\n[연락처]\n${s.contacts.map(c => `${c.code ? c.code + ' ' : ''}${c.role ? c.role + ' ' : ''}${c.name}`).join(', ')}` }] });
     const ns = clone(s);
+    const nt = String(r.notes_text || '').split('\n').map(x => x.trim()).filter(Boolean);
+    if (nt.length) ns.notesRead = { at: now(), text: nt.join(' ¦ ') };
     for (const row of r.rows || []) {
       let t = ns.rows.find(x => x.label.replace(/\s/g, '') === String(row.label).replace(/\s/g, ''));
       if (!t) { t = { sub: '', label: row.label, cells: Array(du.nDays).fill('') }; ns.rows.push(t); }
       (row.cells || []).forEach((c, k) => { if (c != null && k < du.nDays) t.cells[k] = String(c).trim(); });
     }
-    busy(''); showDutyDiff(si, ns, [r.contacts_changed && `연락처·메모 변경: ${r.contacts_changed}`, r.notes].filter(Boolean).join(' · '));
+    busy(''); showDutyDiff(si, ns, [r.contacts_changed && `연락처·메모 변경: ${r.contacts_changed}`, r.notes].filter(Boolean).join(' · '), files);
   } catch (e) { busy(''); $('dfOut').innerHTML = `<div class="banner">${esc(e.message)}</div>`; }
 }
-function showDutyDiff(si, ns, msg) {
+function showDutyDiff(si, ns, msg, src) {
   const du = A.draft.duty, s = du.sections[si];
   let changes = 0;
   const head = `<tr><th>줄</th>${Array.from({ length: du.nDays }, (_, i) => `<th>${i + 1}</th>`).join('')}</tr>`;
@@ -519,14 +528,55 @@ function showDutyDiff(si, ns, msg) {
     return `<tr><td class="nm">${esc((x.sub ? x.sub + ' / ' : '') + x.label)}</td>${x.cells.map((c, k) => { const ch = (o?.cells[k] || '') !== c; if (ch) changes++; return `<td class="${ch ? 'chg' : ''}">${esc(c)}</td>`; }).join('')}</tr>`;
   }).join('');
   $('dfOut').innerHTML = `<div class="stack"><div class="kv"><span>바뀐 칸</span><b>${changes}칸</b></div>
-    ${msg ? `<div class="wt" style="color:var(--muted)">${esc(msg)}</div>` : ''}
+    ${msg ? `<div class="wt" style="color:var(--muted)">${esc(msg)}</div>` : ''}${ns.notesRead && ns.notesRead !== s.notesRead ? `<details class="dnotes"><summary>읽은 연락처·메모 원문</summary>${ns.notesRead.text.split(' ¦ ').map(t => `<p>${esc(t)}</p>`).join('')}</details>` : ''}
     <div class="gridwrap"><table>${head}${body}</table></div>
     <button class="btn primary block" id="dfApply">이대로 반영 (게시 전 미리보기)</button></div>`;
   const fc = $('dfOut').querySelector('td.chg'); if (fc) fc.scrollIntoView({ block: 'nearest', inline: 'center' });
   $('dfApply').onclick = () => {
     const d = A.draft; d.duty.sections[si] = ns; d.updatedAt = now(); d.log = [...(d.log || []), { at: now(), what: `${s.name} 당직표 수정 (${changes}칸)` }];
+    if (src) keepFiles(src, `${s.name} 당직표 수정`, 'duty:' + s.key);
     A.dirty = true; setData(clone(d)); toast(`${s.name} 당직표 반영 · 게시해야 다른 사람에게 보입니다`); open();
   };
+}
+
+/* ------------------------------------------------------------ 올린 원본 파일 보관 (관리자 전용 암호화)
+ * 반영한 엑셀·사진을 게시할 때 data/files/YYYY-MM/<시각>-<난수>.enc.json으로 함께 올린다.
+ * 근무표 비밀번호가 아니라 관리자 공개키로 잠근다(ECDH P-256 + HKDF-SHA256 + AES-256-GCM):
+ * 앱 코드에는 공개키만 있고, 여는 개인키는 관리자의 Claude Code 환경 변수(CALLBOOK_FILE_KEY)에만 있어서
+ * 근무표 비밀번호를 아는 사용자도, 이 폰도 열 수 없다. 파일 이름·과 이름도 암호문 안에만 둔다. */
+const FILE_PUB = 'BBjUZwAth9TGZ4SoP2hQhspQYG+CZD1cZuAnlQGdQ8BL9W/OasSenjlbLy1AJNM/FD2nxeoC5zR9iXfuq56h02s=';
+const b64u8 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+async function sealFile(bytes, meta) {
+  const pub = await crypto.subtle.importKey('raw', Uint8Array.from(atob(FILE_PUB), c => c.charCodeAt(0)), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const eph = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, eph.privateKey, 256);
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const hk = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('callbook-file-v1') }, hk, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const m = new TextEncoder().encode(JSON.stringify(meta)), pt = new Uint8Array(4 + m.length + bytes.length);
+  new DataView(pt.buffer).setUint32(0, m.length); pt.set(m, 4); pt.set(bytes, 4 + m.length);   // [메타 길이][메타 JSON][파일 바이트]
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, pt));
+  return { app: 'jeondam-callbook-file', v: 1, alg: 'ECDH-P256/HKDF-SHA256/AES-256-GCM', epk: b64u8(new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey))), salt: b64u8(salt), iv: b64u8(iv), ct: b64u8(ct) };
+}
+// 사진은 3MB가 넘으면 긴 변 3000px JPEG로 줄여 보관(글씨는 충분히 읽힘), 엑셀은 원본 그대로
+async function fileBytes(f) {
+  if (f.type.startsWith('image/') && f.size > 3e6) {
+    const bmp = await createImageBitmap(f); const s = Math.min(1, 3000 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return [new Uint8Array(await (await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9))).arrayBuffer()), 'image/jpeg'];
+  }
+  return [new Uint8Array(await f.arrayBuffer()), f.type || 'application/octet-stream'];
+}
+// "반영" 때 부른다. 암호화는 바로 시작하고, 올리기는 게시할 때 한꺼번에
+A.pend = [];
+function keepFiles(files, what, unit) {
+  const d = A.draft || {}, ym = `${d.Y}-${String(d.M).padStart(2, '0')}`;
+  for (const f of [].concat(files)) A.pend.push((async () => {
+    const at = now(), [bytes, type] = await fileBytes(f);
+    const rnd = b64u8(crypto.getRandomValues(new Uint8Array(6))).replace(/[+/=]/g, '').slice(0, 6);
+    const path = `data/files/${ym}/${at.replace(/[-:.]/g, '').slice(0, 15)}-${rnd}.enc.json`;
+    return { path, blob: await sealFile(bytes, { name: f.name, type, size: bytes.length, at, what, unit }), meta: { path, at, name: f.name, type, size: bytes.length, what, unit } };
+  })());
 }
 
 /* ------------------------------------------------------------ 게시 · 내보내기 */
@@ -540,6 +590,17 @@ async function publish() {
   openSheet(`<div class="admin stack"><h3>게시</h3>${busyHtml}<div id="pbOut"></div>${back()}</div>`); bindBack();
   busy('암호화 중…');
   try {
+    // 반영한 원본 파일을 먼저 올리고(관리자 키로 암호화된 것), 목록은 근무표 데이터(근무표 비밀번호로 암호화) 안에 남긴다
+    const pre = g.path.includes('data/') ? g.path.slice(0, g.path.lastIndexOf('data/')) : '';
+    while (A.pend.length) {
+      busy(`원본 파일 보관 중… (${A.pend.length}개 남음)`);
+      let f; try { f = await A.pend[0]; } catch (e) { A.pend.shift(); throw new Error('원본 파일 암호화 실패(그 파일은 보관하지 않음): ' + e.message); }
+      const r = await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${pre}${f.path}`, { method: 'PUT', headers: { ...ghHeaders(g.token), 'content-type': 'application/json' },
+        body: JSON.stringify({ message: '원본 파일 보관 (암호화)', content: utf8b64(JSON.stringify(f.blob)), branch: g.branch }) });
+      if (!r.ok) throw new Error('원본 파일 보관 실패: ' + ((await r.json().catch(() => ({}))).message || r.status));
+      A.draft.files = [...(A.draft.files || []), f.meta]; A.pend.shift();
+    }
+    busy('암호화 중…');
     A.draft.updatedAt = now(); const blob = await sealed(); const body = JSON.stringify(blob);
     const url = `https://api.github.com/repos/${g.owner}/${g.repo}/contents/${g.path}`;
     busy('GitHub에 올리는 중…');
