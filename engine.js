@@ -556,12 +556,35 @@ const H = {
   // 원본 메모: Day(7am~3pm)·Evening(3pm~10:30pm)은 팀(Part) 번호, Night(10:30pm~7am)는 N duty 번호 하나
   GSW(cx, h, cfg) {
     const c = cfg.GSW, has = h.nurses.some(n => n.codes.some(Boolean));
-    const w = has ? '근무표 입력됨 - 규칙 미등록' : '(이번 달 근무표 미입력)', wn = has ? '외과 병동 근무표가 새로 입력됨 → 팀 표기 규칙 확인 필요' : '';
+    if (has) {
+      // 근무 코드: D/E + 팀 글자 + 파트 숫자(Da1 = A1 파트). 숫자 없는 Ea = 그 팀 전체(두 파트) 담당. Dx는 call 안 받음. N = N duty
+      const sh = (d, t) => h.nurses.map(n => [n, h.code(n, d)[0]]).filter(([, x]) => x[0] === t);
+      for (const d of cx.days) {
+        for (const t of 'DE') {
+          const list = sh(d, t).map(([n, x]) => [n.name, /^[DE]([abc])([12])?$/i.exec(x), x]);
+          c.teams.forEach(([team, profs, num], ti) => {
+            const tl = team[0].toLowerCase(), part = team.slice(1);
+            const own = list.filter(([, m]) => m && m[1].toLowerCase() === tl && m[2] === part).map(x => x[0]);
+            const whole = list.filter(([, m]) => m && m[1].toLowerCase() === tl && !m[2]).map(x => x[0]);
+            const ws = own.length ? own : whole;
+            const note = ['Part call · 병동 전담은 ER call 안 받음', !own.length && whole.length ? `${team[0]}팀 1명이 ${team[0]}1·${team[0]}2 함께 담당` : '', own.length && whole.length ? `${team[0]}팀 추가 근무: ${whole.join(', ')}` : ''].filter(Boolean).join(' · ');
+            const odd = list.filter(([, m, x]) => !m && x !== 'Dx').map(([nm, , x]) => `${nm}(${x})`);
+            const w = !ws.length ? `${SHN[t]} ${team} 근무자 없음${odd.length ? ` · 팀 표기 없는 근무 ${odd.join(', ')}` : ''} → 확인 필요` : ws.length > 1 ? `같은 근무에 ${team} ${ws.length}명` : '';
+            profs.forEach((p, pi) => h.add(d, team, p, SHN[t], num, ws, note, w, [ti, pi]));
+          });
+        }
+        const nw = sh(d, 'N').filter(([, x]) => x === 'N').map(([n]) => n.name);
+        c.teams.forEach(([team, profs], ti) => profs.forEach((p, pi) =>
+          h.add(d, team, p, 'Night', c.night, nw, 'Night는 팀 구분 없이 N duty', nw.length === 1 ? '' : nw.length ? `Night ${nw.length}명` : 'Night 근무자 없음', [ti, pi])));
+      }
+      return;
+    }
+    const w = '(이번 달 근무표 미입력)';
     for (const d of cx.days) {
       // 교수마다 Night 줄도 만든다(교수 찾기·이름 검색에서 Night 번호가 보이도록)
       c.teams.forEach(([team, profs, num], ti) => profs.forEach((p, pi) => {
-        for (const t of 'DE') h.add(d, team, p, SHN[t], num, w, 'Part call · 병동 전담은 ER call 안 받음', wn, [ti, pi]);
-        h.add(d, team, p, 'Night', c.night, w, 'Night는 팀 구분 없이 N duty', wn, [ti, pi]);
+        for (const t of 'DE') h.add(d, team, p, SHN[t], num, w, 'Part call · 병동 전담은 ER call 안 받음', '', [ti, pi]);
+        h.add(d, team, p, 'Night', c.night, w, 'Night는 팀 구분 없이 N duty', '', [ti, pi]);
       }));
     }
   },
