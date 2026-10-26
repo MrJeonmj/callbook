@@ -213,13 +213,25 @@ function renderHome() {
     return `<button class="chip ${S.favs.has(dept) ? 'fav' : ''}" data-go="${esc(dept)}">${S.favs.has(dept) ? '★ ' : ''}${esc(dept.replace(/^내과 /, ''))}${w ? `<span class="n">⚠${w}</span>` : ''}</button>`;
   }).join('');
   $('chips').querySelectorAll('[data-go]').forEach(b => b.onclick = () => document.getElementById('d-' + b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' })); bindFavOnly();
-  if (!groups.length && S.favOnly) { $('main').innerHTML = `<div class="empty"><b>이 근무에 별표한 항목이 없습니다</b>☆는 단 근무와 다음 근무까지만 유지됩니다</div>`; return; }
+  const ward = wardCard();
+  if (!groups.length && S.favOnly) { $('main').innerHTML = ward + `<div class="empty"><b>이 근무에 별표한 항목이 없습니다</b>☆는 단 근무와 다음 근무까지만 유지됩니다</div>`; return; }
+  if (!groups.length && ward && S.q) { $('main').innerHTML = ward; return; }
   if (!groups.length) {
-    $('main').innerHTML = `<div class="empty"><b>${S.q ? '찾는 결과가 없습니다' : '이 시간대 근무가 없습니다'}</b>${S.q ? '교수·과·간호사 이름 일부만 입력해 보세요' : '다른 근무 시간대를 눌러 보세요'}</div>`;
+    $('main').innerHTML = ward + `<div class="empty"><b>${S.q ? '찾는 결과가 없습니다' : '이 시간대 근무가 없습니다'}</b>${S.q ? '교수·과·간호사 이름 일부만 입력해 보세요' : '다른 근무 시간대를 눌러 보세요'}</div>`;
     return;
   }
-  $('main').innerHTML = (issues.length ? `<div class="banner">⚠ ${esc(issues.join(' / '))}</div>` : '') + groups.map(([dept, rs]) => deptCard(dept, rs, !!S.q)).join('');
+  $('main').innerHTML = (issues.length ? `<div class="banner">⚠ ${esc(issues.join(' / '))}</div>` : '') + ward + groups.map(([dept, rs]) => deptCard(dept, rs, !!S.q)).join('');
   bindRows($('main'));
+}
+// 우리 병동 근무자(data.ward = { name, days: { 'YYYY-MM-DD': [[이름, 코드], …] } }) — 보고 있는 날짜·근무에 맞춰 맨 위 카드로
+// 코드 D·DZ·D0·D교 = Day, E·E0 = Evening, N·N0 = Night (병동 근무표의 Day/Evening/Night 합계와 같은 기준 + 표시용 변형 코드)
+const wardShift = c => /^(D|DZ|D0|D교)$/.test(c) ? 'D' : /^(E|E0)$/.test(c) ? 'E' : /^(N|N0)$/.test(c) ? 'N' : '';
+function wardCard() {
+  const w = S.data.ward, day = w?.days?.[ymd(S.data.Y, S.data.M, S.day)]; if (!day) return '';
+  const list = day.filter(([, c]) => wardShift(c) === S.shift), q = S.q.trim();
+  if (q && !w.name.includes(q) && !list.some(([n]) => n.includes(q))) return '';
+  return `<section class="dept ward"><header><h2>${esc(w.name)}</h2><span class="badge s-${S.shift}">${list.length}명</span></header>
+    <div class="wardList">${list.map(([n, c]) => `<span class="wn${q && n.includes(q) ? ' hit' : ''}">${esc(n)}${c !== S.shift ? `<i>${esc(c)}</i>` : ''}</span>`).join('') || '<span class="wn none">근무자 없음</span>'}</div></section>`;
 }
 function deptCard(dept, rs, showShift) {
   const w = rs.filter(r => r.warn).length;

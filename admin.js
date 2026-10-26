@@ -231,7 +231,7 @@ function newMonth() {
       const book = await Engine.readXlsx(await f.arrayBuffer());
       const ex = Engine.extractBook(book, f.name);
       const base = A.draft || App.S.data;
-      const draft = { ...ex, cfg: clone(base?.cfg || Engine.DEFAULT_CFG), ...(base?.duty ? { duty: clone(base.duty) } : {}), updatedAt: now(), log: [...(base?.log || []).slice(-40), { at: now(), what: `${ex.Y}년 ${ex.M}월 근무표 등록 (${f.name})` }] };
+      const draft = { ...ex, cfg: clone(base?.cfg || Engine.DEFAULT_CFG), ...(base?.duty ? { duty: clone(base.duty) } : {}), ...(base?.ward ? { ward: clone(base.ward) } : {}), updatedAt: now(), log: [...(base?.log || []).slice(-40), { at: now(), what: `${ex.Y}년 ${ex.M}월 근무표 등록 (${f.name})` }] };
       draft.memoChanged = Engine.memoDiff(base?.units, ex.units);
       const res = Engine.compute(draft);
       busy('');
@@ -251,7 +251,7 @@ function newMonth() {
         const [y, m] = $('nmYm').value.split('-').map(Number);
         const hol = $('nmHol').value.split(/[,\s]+/).map(Number).filter(Boolean);
         if (y !== draft.Y || m !== draft.M || hol.join() !== draft.holidays.join()) {
-          const ex2 = Engine.extractBook(book, f.name, { ym: [y, m], holidays: hol }); Object.assign(draft, ex2, { cfg: draft.cfg, duty: draft.duty, memoChanged: draft.memoChanged, updatedAt: draft.updatedAt, log: draft.log });
+          const ex2 = Engine.extractBook(book, f.name, { ym: [y, m], holidays: hol }); Object.assign(draft, ex2, { cfg: draft.cfg, duty: draft.duty, ward: draft.ward, memoChanged: draft.memoChanged, updatedAt: draft.updatedAt, log: draft.log });
         }
       };
       $('nmAi').onclick = async () => { fix(); await review(draft, $('nmAiOut')); };
