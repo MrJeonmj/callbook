@@ -239,7 +239,7 @@ const NUM_RE = /0\d{1,2}-\d{3,4}-\d{4}|(?<![\d:])\d{4,6}(?![\d:])/g;
 const hasGuide = memo => /pf\s*\.?/i.test(memo) || [...memo.matchAll(NUM_RE)].length > 0;
 function mergeRevised(old, neu) {
   const keptMemo = !hasGuide(neu.memo) && hasGuide(old.memo);
-  const unit = { ...neu, key: old.key, name: old.name, kind: old.kind, order: old.order };
+  const unit = { ...neu, key: old.key, name: old.name, kind: old.kind, order: old.order, ...(old.assign ? { assign: old.assign } : {}) };   // 날짜별 파트 배정표는 유지(근무 코드와 다르면 엔진이 ⚠)
   if (keptMemo) Object.assign(unit, { memo: old.memo, text: old.text, cover: old.cover, extraInfo: old.extraInfo });
   return { unit, keptMemo };
 }
@@ -336,6 +336,43 @@ function helper(cx, u, cfg) {
   return { u, nm, base, phone, code, mark, coord, byShift, add, coords, nurses: u.nurses };
 }
 
+// 내과 MG: 부서가 날짜마다 "파트별 담당 간호사" 배정표를 줄 때(u.assign = { days: { 일: { D: {'A1': [이름], 'A2+A2-1': [이름] …}, E: {…}, N: [이름] } } })
+// 칸이 합쳐져 한 사람이 팀 전체를 맡으면 단독 번호(v2.solo), 파트가 나뉘면 D 기준 파트 번호(v2.D). E도 같은 기준(메모: "E 근무: A 단독 근무시 4925 …")
+// v2.parts = [{ from: 'YYYY-MM-DD', A1: [교수], A2: […], 'A2-1': […], B: […], C: […] }] — 날짜별 교수 소속(병가 등)
+// day.warn = { 'E:B': '확인할 점' } — 그 근무·팀 줄에 ⚠ (배정표와 근무 코드가 어긋날 때 등)
+const MG_TEAM = { A1: 'A1(GI)', A2: 'A2(GI)', 'A2-1': 'A2-1', B: 'B(Liver)', C: 'C(Biliary)' };
+function mgAssign(cx, h, v) {
+  const ymd = d => `${cx.Y}-${String(cx.M).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  for (const d of cx.days) {
+    const day = h.u.assign.days?.[d]; if (!day) continue;
+    const per = v.parts.filter(p => p.from <= ymd(d)).pop() || v.parts[0];
+    const parts = Object.keys(MG_TEAM).filter(k => per[k]?.length);
+    for (const t of 'DE') {
+      const cells = Object.entries(day[t] || {}).map(([k, names]) => ({ parts: k.split('+'), names }));
+      // 배정표의 사람과 근무 코드(그날 D/E)가 다르면 그 근무 전체를 확인 필요로(나중에 근무 코드만 바뀐 경우 등)
+      const coded = h.nurses.filter(n => !h.coord(n) && h.code(n, d)[0] === t).map(n => n.name), listed = cells.flatMap(x => x.names);
+      const off = listed.filter(x => !coded.includes(x)), miss = coded.filter(x => !listed.includes(x));
+      const mis = off.length || miss.length ? `배정표와 근무 코드가 다름(${[off.length && '배정표에만: ' + off.join(', '), miss.length && '근무 코드에만: ' + miss.join(', ')].filter(Boolean).join(' / ')}) → 확인 필요` : '';
+      parts.forEach((pt, ti) => per[pt].forEach((p, pi) => {
+        const cell = cells.find(x => x.parts.includes(pt)), kk = [ti, pi], team = MG_TEAM[pt], L = pt[0];
+        if (!cell || !cell.names.length) return h.add(d, team, p, SHN[t], UNK, [], '', `${SHN[t]} ${pt} 담당 없음`, kk);
+        const w = cell.names, teamParts = parts.filter(x => x[0] === L), dw = day.warn?.[`${t}:${L}`] || day.warn?.[`${t}:${pt}`] || mis;
+        // 확인할 점이 있는 칸은 번호를 확정하지 않음(알수없음 + 추정)
+        const add = (num, note, wn) => h.add(d, team, p, SHN[t], dw && !String(num).startsWith(UNK) ? unknown(num) : num, w, note, [dw, wn].filter(Boolean).join(' / '), kk);
+        // 팀 전체를 한 칸(한 사람)이 맡음 → 단독 번호
+        if (w.length === 1 && teamParts.every(x => cell.parts.includes(x))) return add(v.solo[L], `${L}팀 단독 근무`, '');
+        let num = L === 'B' ? (v.D.B[p] || null) : v.D[cell.parts[0]];
+        if (L === 'C') num = w.length === 1 ? v.solo.C : v.D.C;
+        const note = `파트별 번호(D 기준)${t === 'E' ? ' · E도 단독이 아니라 D 기준' : ''}${cell.parts.length > 1 ? ` · ${cell.parts.join('·')} 함께 담당` : ''}`;
+        if (!num) add(unknown(v.D[pt === 'A2-1' ? 'A2' : pt] || v.solo[L]), note, `${pt} 번호가 메모에 없음 → 확인 필요`);
+        else add(num, note, w.length > 2 ? `${pt} ${w.length}명` : '');
+      }));
+    }
+    const nw = day.N || [];
+    parts.forEach((pt, ti) => per[pt].forEach((p, pi) => h.add(d, MG_TEAM[pt], p, 'Night', nw.length === 1 ? v.night : unknown(v.night), nw, 'Night 1인 근무 - 팀 구분 없이 같은 번호', nw.length === 1 ? '' : `Night ${nw.length}인`, [ti, pi])));
+    h.coords(d, '항암처방·교육 문의 · PA call X');
+  }
+}
 const H = {
   MC(cx, h, cfg) {
     const c = cfg.MC, rows = h.nurses.filter(n => !h.coord(n));
@@ -407,6 +444,7 @@ const H = {
   },
   MG(cx, h, cfg) {
     const c = cfg.MG, rows = h.nurses.filter(n => !h.coord(n));
+    if (h.u.assign && c.v2) return mgAssign(cx, h, c.v2);
     for (const d of cx.days) {
       const sh = h.byShift(d, rows);
       for (const t of 'DEN') {
