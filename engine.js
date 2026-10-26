@@ -265,11 +265,13 @@ function ruleCheck(unit, cfg) {
   const norm = x => x.startsWith('0') ? x : x.replace(/\D/g, '').slice(-4);
   const ign = new Set((cfg._ignore || {})[k] || []);
   const mn = new Set([...memo.matchAll(NUM_RE)].map(m => m[0]).filter(x => !ign.has(x)).map(norm));
-  const cn = new Set([...JSON.stringify(cfg[k] || {}).matchAll(NUM_RE)].map(m => m[0]).map(norm));
+  // old = 지난 날짜에만 쓰는 옛 규칙, from = 새 규칙 시작일 → 지금 메모와 비교하지 않음
+  const cn = new Set([...JSON.stringify(cfg[k] || {}, (key, v) => key === 'old' || key === 'from' ? undefined : v).matchAll(NUM_RE)].map(m => m[0]).map(norm));
   [...mn].filter(x => !cn.has(x)).sort().forEach(x => out.push(`메모에 있는 번호 ${x}가 규칙에 없음`));
   [...cn].filter(x => !mn.has(x)).sort().forEach(x => out.push(`규칙의 번호 ${x}가 메모에서 사라짐`));
   const names = cfgNames(k, cfg);
-  [...names].sort().forEach(p => { if (!memo.includes(p)) out.push(`규칙의 교수 ${p}가 메모에 없음`); });
+  // 메모에 교수 명단이 아예 없으면(번호 안내만 있는 수정본) 명단 대조는 건너뜀
+  if (/pf/i.test(memo)) [...names].sort().forEach(p => { if (!memo.includes(p)) out.push(`규칙의 교수 ${p}가 메모에 없음`); });
   if (k !== 'NS' && names.size) {
     const pf = new Set();
     for (const m of memo.matchAll(PF_RE)) m[1].split(/\s*,\s*(?:pf\s*\.?\s*)?/i).forEach(n => n.trim() && pf.add(n.trim()));
@@ -477,15 +479,29 @@ const H = {
     }
   },
   PEDS(cx, h, cfg) {
-    const c = cfg.PEDS;
+    // 2026-10-15부터(c.sp.from) 메모: 평일 SP(10am~6pm) 근무자가 있으면 4728 = ER·병동 신환, 4726 = A/B팀 part(SP 퇴근 후 ER도)
+    // SP 근무자가 없으면 A팀 4726 / B팀 4728. 주말·나이트는 새 메모에 없음 → A는 옛 규칙과 같아 4726, B는 알수없음(추정 4728)
+    // 그 전 날짜는 c.old(옛 규칙: B 4725, 주말·나이트 4726)
+    const c = cfg.PEDS, sp = c.sp, ymd = d => `${cx.Y}-${String(cx.M).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     for (const d of cx.days) {
-      const sh = h.byShift(d, h.nurses);
+      const sh = h.byShift(d, h.nurses), isNew = sp && ymd(d) >= sp.from, old = isNew ? null : c.old || { B: c.B[1], night: c.night };
+      const spW = h.nurses.filter(n => h.code(n, d)[0] === 'SP').map(n => n.name), wkday = !cx.holi.has(d);
       for (const t of 'DEN') {
         const w = sh[t].map(x => x.name); if (!w.length) continue;
         ['A', 'B'].forEach((tm, ti) => c[tm][0].forEach((p, pi) => {
-          if (t === 'N' || cx.holi.has(d)) h.add(d, `${tm}팀`, p, SHN[t], c.night, w, '주말·나이트 번호', '', [ti, pi]);
-          else h.add(d, `${tm}팀`, p, SHN[t], c[tm][1], w, '근무표에 팀 표기 없어 근무자 전체 표시 · first call로 연락하면 전달', '', [ti, pi]);
+          if (!isNew) {
+            if (t === 'N' || !wkday) h.add(d, `${tm}팀`, p, SHN[t], old.night, w, '주말·나이트 번호', '', [ti, pi]);
+            else h.add(d, `${tm}팀`, p, SHN[t], tm === 'B' ? old.B : c.A[1], w, '근무표에 팀 표기 없어 근무자 전체 표시 · first call로 연락하면 전달', '', [ti, pi]);
+          } else if (t === 'N' || !wkday) {
+            if (tm === 'A') h.add(d, 'A팀', p, SHN[t], c.A[1], w, '주말·나이트 · A팀 part', '', [ti, pi]);
+            else h.add(d, 'B팀', p, SHN[t], unknown(c.B[1]), w, '추정 근거: SP 없을 때 B팀 part ' + c.B[1], '10/15 새 메모에 주말·나이트 B팀 번호 없음(옛 규칙은 4726) → 확인 필요', [ti, pi]);
+          } else if (spW.length) h.add(d, `${tm}팀`, p, SHN[t], sp.part, w, `SP 근무일 · A·B팀 part call ${sp.part} (ER·병동 신환은 SP ${sp.er})`, '', [ti, pi]);
+          else h.add(d, `${tm}팀`, p, SHN[t], c[tm][1], w, 'SP 없는 날 · 팀별 part 번호 · 팀 표기 없어 근무자 전체 표시', '', [ti, pi]);
         }));
+      }
+      if (isNew && wkday && spW.length) {
+        h.add(d, 'ER·병동 신환', '교수 구분 없음', 'Day', sp.er, spW, 'SP(10am~6pm) · ER call·병동 신환 call', '', [5, 0]);
+        h.add(d, 'ER·병동 신환', '교수 구분 없음', 'Evening', sp.er, spW, `6pm까지 SP ${sp.er} · SP 퇴근 후 ER call은 ${sp.part}`, '', [5, 0]);
       }
     }
   },
