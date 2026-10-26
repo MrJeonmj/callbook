@@ -248,7 +248,7 @@ function rowHtml(r, showShift) {
   const sg = shiftGroup(r.shift);
   const sb = showShift || !/^(Day|Evening|Night)$/.test(r.shift) ? `<span class="badge ${sg !== '*' ? 's-' + sg : ''}">${esc(r.shift)}</span>` : '';
   const tb = !generic && r.team && r.team !== '-' ? `<span class="badge">${esc(r.team)}</span>` : '';
-  return `<div class="row ${r.warn ? 'warn' : ''}">${rowStar(rowKey(r))}
+  return `<div class="row ${r.warn ? 'warn' : ''} ${numsWide(r.number) ? 'wide' : ''}">${rowStar(rowKey(r))}
     <div class="who"><div class="p">${esc(title)} ${tb}${sb}</div>
       ${r.workers && r.workers !== '-' ? `<div class="w2">${esc(r.workers)}</div>` : ''}
       ${r.warn ? `<div class="wt">⚠ ${esc(r.warn)}</div>` : ''}
@@ -265,11 +265,24 @@ function numsHtml(num) {
   const chip = t => `<button class="num ${/^0\d/.test(t) && t.startsWith('010') ? 'cell' : ''}" data-num="${esc(t)}">${t.startsWith('010') ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>' : ''}${esc(t)}</button>`;
   if (!toks.length) return `<span class="num txt">${esc(num)}</span>`;
   if (!rest || /^(내선|\(먼저\)|먼저)$/.test(rest.replace(/[()]/g, ''))) return toks.map(chip).join('') + (/먼저/.test(num) ? '<span class="badge">먼저</span>' : '');
-  // 설명이 섞인 번호(예: 1인 근무 시 …, 팀별 번호) → 문장 그대로 + 숫자만 누를 수 있게
-  return `<span class="num txt">${esc(num).replace(TOKEN, t => `<button class="badge" data-num="${t}" style="font-size:13px;color:var(--ink)">${t}</button>`)}</span>`;
+  // 설명이 섞인 번호(예: "4929, 4920 (1인 근무 시 4929)") → 괄호 밖 번호는 버튼, 괄호 안 설명은 아래 작은 글씨(숫자만 누를 수 있게)
+  const main = num.replace(/\([^)]*\)/g, ' '), mt = main.match(TOKEN) || [], mrest = main.replace(TOKEN, '').replace(/[,/·\s]+/g, '');
+  const notes = [...num.matchAll(/\(([^)]*)\)/g)].map(m => m[1].trim()).filter(Boolean);
+  const nb = t => esc(t).replace(TOKEN, x => `<button class="badge" data-num="${x}">${x}</button>`);
+  if (mt.length && !mrest) return mt.map(chip).join('') + notes.map(t => `<span class="nnote">${nb(t)}</span>`).join('');
+  return `<span class="nnote">${nb(num)}</span>`;
+}
+// 번호 칸이 넓어지는 경우(번호 3개 이상·설명 섞임·긴 알수없음)엔 이름 아래 줄로 내려서 이름 칸이 눌리지 않게
+function numsWide(num) {
+  num = String(num || ''); if (!num) return false;
+  if (num.startsWith(Engine.UNK)) return num.length > 16;
+  const toks = num.match(TOKEN) || [];
+  return toks.length > 2 || !!num.replace(TOKEN, '').replace(/[,/·\s]+/g, '').replace(/^(내선|\(먼저\)|먼저)$/, '') || toks.join('').length > 22;
 }
 function bindRows(root) {
   root.querySelectorAll('[data-num]').forEach(b => b.onclick = () => numAction(b.dataset.num));
+  // 그린 뒤 실제 폭을 재서 이름·근무자 칸이 125px보다 좁아지면 번호 칸을 이름 아래 줄로(좁은 화면·번호 여러 개)
+  root.querySelectorAll('.row:not(.wide)').forEach(el => { const w = el.querySelector('.who'); if (w && el.querySelector('.nums') && w.offsetWidth < 125) el.classList.add('wide'); });
   root.querySelectorAll('[data-fav]').forEach(b => b.onclick = () => { FAV.toggle(b.dataset.fav); render(); });
   root.querySelectorAll('[data-more]').forEach(b => b.onclick = () => { S.open.add(b.dataset.more); render(); });
 }

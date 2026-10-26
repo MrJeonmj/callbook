@@ -343,6 +343,8 @@ function helper(cx, u, cfg) {
 const MG_TEAM = { A1: 'A1(GI)', A2: 'A2(GI)', 'A2-1': 'A2-1', B: 'B(Liver)', C: 'C(Biliary)' };
 function mgAssign(cx, h, v) {
   const ymd = d => `${cx.Y}-${String(cx.M).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  // 중간에 합류하는 교수(병가 복귀 등)도 팀 순서대로 정렬되게 순번을 미리 매김
+  for (const pt of Object.keys(MG_TEAM)) for (const per of v.parts) for (const p of per[pt] || []) { const rk = h.u.key + '\u0000' + p; if (!cx.rank.has(rk)) cx.rank.set(rk, cx.rank.size); }
   for (const d of cx.days) {
     const day = h.u.assign.days?.[d]; if (!day) continue;
     const per = v.parts.filter(p => p.from <= ymd(d)).pop() || v.parts[0];
